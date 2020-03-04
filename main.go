@@ -23,13 +23,25 @@ type Reader struct {
 	runeBufPrevPosStack []int
 }
 
+// type PatternType int
+
+// const (
+// 	TerminalSymbolPattern PatternType = iota
+// 	TerminalCharacterGroupPattern
+// 	AlternationPattern
+// 	ConcatenationPattern
+// 	OptionalPattern
+// 	RepetitionPattern
+// 	ExceptionPattern
+// )
+
 // MatchResult contains the result of a match
 type MatchResult struct {
 	Match  bool
 	Result interface{}
 }
 
-// Pattern to match, can use peak and read from reader
+// Pattern to match
 type Pattern interface {
 	Match(r *Reader) (*MatchResult, error)
 }
@@ -55,22 +67,15 @@ type Repetition struct {
 
 // Exception pattern
 type Exception struct {
-	Must    Pattern
-	MustNot Pattern
+	MustMatch Pattern
+	Except    Pattern
 }
 
-// type PatternType int
-
-// const (
-// 	TerminalSymbolPattern PatternType = iota
-// 	TerminalCharacterGroupPattern
-// 	AlternationPattern
-// 	ConcatenationPattern
-// 	OptionalPattern
-// 	RepetitionPattern
-// 	ExceptionPattern
-// 	RulePattern
-// )
+// EBNF pattern
+type EBNF struct {
+	RootRule string
+	Rules    map[string]Pattern
+}
 
 // type Element struct {
 // 	Pattern Pattern
@@ -107,18 +112,6 @@ func (r *Reader) PopPos() {
 func (r *Reader) String() string {
 	prevPos := r.runeBufPrevPosStack[len(r.runeBufPrevPosStack)-1]
 	return string(r.runeBuf[prevPos:r.runeBufPos])
-}
-
-// Consume from the buffer what is read so far
-func (r *Reader) Consume() {
-	if r.runeBufPos < len(r.runeBuf) {
-		r.runeBuf = r.runeBuf[r.runeBufPos:]
-	} else {
-		r.runeBuf = []rune{}
-	}
-
-	r.runeBufPos = 0
-	r.runeBufPrevPosStack = []int{0}
 }
 
 // Finished returns true if EOF is reached
@@ -203,9 +196,7 @@ func (s TerminalString) Match(r *Reader) (*MatchResult, error) {
 func (g TerminalCharacterGroup) Match(r *Reader) (*MatchResult, error) {
 	r.SavePos()
 
-	result := &MatchResult{
-		Match: false,
-	}
+	result := &MatchResult{Match: false}
 
 	rn, err := r.Read()
 	if err == io.EOF {
@@ -290,7 +281,7 @@ func (c Concatenation) Match(r *Reader) (*MatchResult, error) {
 
 // Match exception pattern
 func (e *Exception) Match(r *Reader) (result *MatchResult, err error) {
-	result, err = e.MustNot.Match(r)
+	result, err = e.Except.Match(r)
 	if err != nil {
 		return
 	}
@@ -301,7 +292,7 @@ func (e *Exception) Match(r *Reader) (result *MatchResult, err error) {
 		return
 	}
 
-	result, err = e.Must.Match(r)
+	result, err = e.MustMatch.Match(r)
 
 	return
 }
@@ -355,29 +346,83 @@ func (rep *Repetition) Match(r *Reader) (*MatchResult, error) {
 	}, nil
 }
 
+// NewEBNF creates a new EBNF parser
+func NewEBNF() *EBNF {
+	return &EBNF{
+		RootRule: "",
+		Rules:    map[string]Pattern{},
+	}
+}
+
+// Match EBNF pattern
+func (e *EBNF) Match(r *Reader) (*MatchResult, error) {
+	return e.Rules[e.RootRule].Match(r)
+}
+
 func main() {
-	reader := NewReader(strings.NewReader("rtb tba"))
+	reader := NewReader(strings.NewReader("PROGRAM DEMO1\nBEGIN\nA:=3;\nEND"))
+	ebnf := NewEBNF()
 
-	exception := &Exception{
-		Must: TerminalCharacterGroup(unicode.IsLetter),
-		MustNot: TerminalCharacterGroup(func(r rune) bool {
-			return r == 'a'
-		}),
+	ebnf.Rules["whitespace"] = TerminalCharacterGroup(unicode.IsSpace)
+	ebnf.Rules["visible_character"] = TerminalCharacterGroup(unicode.IsPrint)
+	ebnf.Rules["digit"] = TerminalCharacterGroup(unicode.IsDigit)
+	ebnf.Rules["alphabetic_character"] = Alternation{
+		TerminalString("A"), TerminalString("B"), TerminalString("C"), TerminalString("D"), TerminalString("E"),
+		TerminalString("F"), TerminalString("G"), TerminalString("H"), TerminalString("I"), TerminalString("J"),
+		TerminalString("K"), TerminalString("L"), TerminalString("M"), TerminalString("N"), TerminalString("O"),
+		TerminalString("P"), TerminalString("Q"), TerminalString("R"), TerminalString("S"), TerminalString("T"),
+		TerminalString("U"), TerminalString("V"), TerminalString("W"), TerminalString("X"), TerminalString("Y"),
+		TerminalString("Z"),
 	}
 
-	repetition := &Repetition{
-		Min:     2,
-		Max:     3,
-		Pattern: exception,
+	ebnf.Rules["identifier"] = Concatenation{
+		ebnf.Rules["alphabetic_character"],
+		&Repetition{Min: 0, Max: 0, Pattern: Alternation{ebnf.Rules["alphabetic_character"], ebnf.Rules["digit"]}},
 	}
 
-	concatenation := Concatenation{
-		repetition,
-		TerminalCharacterGroup(unicode.IsSpace),
-		repetition,
+	ebnf.Rules["number"] = &Repetition{Min: 1, Max: 0, Pattern: ebnf.Rules["digit"]}
+
+	ebnf.Rules["string"] = Concatenation{
+		TerminalString("\""),
+		&Exception{
+			MustMatch: ebnf.Rules["visible_character"],
+			Except:    TerminalString("\""),
+		},
+		TerminalString("\""),
 	}
 
-	result, err := concatenation.Match(reader)
+	ebnf.Rules["assignment"] = Concatenation{
+		ebnf.Rules["identifier"],
+		TerminalString(":="),
+		Alternation{
+			ebnf.Rules["number"],
+			ebnf.Rules["identifier"],
+			ebnf.Rules["string"],
+		},
+	}
+
+	ebnf.Rules["program"] = Concatenation{
+		TerminalString("PROGRAM"),
+		ebnf.Rules["whitespace"],
+		ebnf.Rules["identifier"],
+		ebnf.Rules["whitespace"],
+		TerminalString("BEGIN"),
+		ebnf.Rules["whitespace"],
+		&Repetition{
+			Min: 0,
+			Max: 0,
+			Pattern: Concatenation{
+				ebnf.Rules["assignment"],
+				TerminalString(";"),
+				ebnf.Rules["whitespace"],
+			},
+		},
+		TerminalString("END"),
+	}
+
+	ebnf.RootRule = "program"
+
+	result, err := ebnf.Match(reader)
 	if err != nil {
 		log.Fatalf("err %v\n", err)
 	}
