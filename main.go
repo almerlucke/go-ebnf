@@ -43,6 +43,9 @@ type TerminalCharacterGroup func(r rune) bool
 // Alternation pattern
 type Alternation []Pattern
 
+// Concatenation pattern
+type Concatenation []Pattern
+
 // Repetition pattern
 type Repetition struct {
 	Min     int
@@ -56,23 +59,23 @@ type Exception struct {
 	MustNot Pattern
 }
 
-type PatternType int
+// type PatternType int
 
-const (
-	TerminalSymbolPattern PatternType = iota
-	TerminalCharacterGroupPattern
-	AlternationPattern
-	ConcatenationPattern
-	OptionalPattern
-	RepetitionPattern
-	ExceptionPattern
-	RulePattern
-)
+// const (
+// 	TerminalSymbolPattern PatternType = iota
+// 	TerminalCharacterGroupPattern
+// 	AlternationPattern
+// 	ConcatenationPattern
+// 	OptionalPattern
+// 	RepetitionPattern
+// 	ExceptionPattern
+// 	RulePattern
+// )
 
-type Element struct {
-	Pattern Pattern
-	Type    Pattern
-}
+// type Element struct {
+// 	Pattern Pattern
+// 	Type    Pattern
+// }
 
 // NewReader creates a new reader
 func NewReader(r io.Reader) *Reader {
@@ -256,6 +259,35 @@ func (a Alternation) Match(r *Reader) (*MatchResult, error) {
 	return &MatchResult{Match: false}, nil
 }
 
+// Match concatenation pattern
+func (c Concatenation) Match(r *Reader) (*MatchResult, error) {
+	matches := []*MatchResult{}
+
+	r.SavePos()
+
+	for _, p := range c {
+		result, err := p.Match(r)
+		if err != nil {
+			r.RestorePos()
+			return nil, err
+		}
+
+		if !result.Match {
+			r.RestorePos()
+			return &MatchResult{Match: false}, nil
+		}
+
+		matches = append(matches, result)
+	}
+
+	r.PopPos()
+
+	return &MatchResult{
+		Match:  true,
+		Result: matches,
+	}, nil
+}
+
 // Match exception pattern
 func (e *Exception) Match(r *Reader) (result *MatchResult, err error) {
 	result, err = e.MustNot.Match(r)
@@ -276,7 +308,6 @@ func (e *Exception) Match(r *Reader) (result *MatchResult, err error) {
 
 // Match repetition pattern
 func (rep *Repetition) Match(r *Reader) (*MatchResult, error) {
-	numMatches := 0
 	matches := []*MatchResult{}
 
 	r.SavePos()
@@ -284,6 +315,7 @@ func (rep *Repetition) Match(r *Reader) (*MatchResult, error) {
 	for {
 		finished, err := r.Finished()
 		if err != nil {
+			r.RestorePos()
 			return nil, err
 		}
 
@@ -298,10 +330,9 @@ func (rep *Repetition) Match(r *Reader) (*MatchResult, error) {
 		}
 
 		if result.Match {
-			numMatches++
 			matches = append(matches, result)
 
-			if rep.Max != 0 && numMatches == rep.Max {
+			if rep.Max != 0 && len(matches) == rep.Max {
 				break
 			}
 		} else {
@@ -309,7 +340,7 @@ func (rep *Repetition) Match(r *Reader) (*MatchResult, error) {
 		}
 	}
 
-	if numMatches < rep.Min {
+	if len(matches) < rep.Min {
 		r.RestorePos()
 		return &MatchResult{
 			Match: false,
@@ -325,43 +356,28 @@ func (rep *Repetition) Match(r *Reader) (*MatchResult, error) {
 }
 
 func main() {
-	reader := NewReader(strings.NewReader("123 this is a test"))
+	reader := NewReader(strings.NewReader("rtb tba"))
+
+	exception := &Exception{
+		Must: TerminalCharacterGroup(unicode.IsLetter),
+		MustNot: TerminalCharacterGroup(func(r rune) bool {
+			return r == 'a'
+		}),
+	}
 
 	repetition := &Repetition{
-		Min:     1,
-		Max:     0,
-		Pattern: TerminalCharacterGroup(unicode.IsLetter),
+		Min:     2,
+		Max:     3,
+		Pattern: exception,
 	}
 
-	terminal1 := TerminalString("123")
-	terminal2 := TerminalString("this")
-	alternation := Alternation{terminal1, terminal2}
-
-	whitespace := TerminalCharacterGroup(unicode.IsSpace)
-
-	result, err := repetition.Match(reader)
-	if err != nil {
-		log.Fatalf("err %v\n", err)
+	concatenation := Concatenation{
+		repetition,
+		TerminalCharacterGroup(unicode.IsSpace),
+		repetition,
 	}
 
-	if result.Match {
-		log.Printf("matched %v\n", result.Result)
-	} else {
-		log.Printf("no match\n")
-	}
-
-	result, err = whitespace.Match(reader)
-	if err != nil {
-		log.Fatalf("err %v\n", err)
-	}
-
-	if result.Match {
-		log.Printf("matched %v\n", result.Result)
-	} else {
-		log.Printf("no match\n")
-	}
-
-	result, err = alternation.Match(reader)
+	result, err := concatenation.Match(reader)
 	if err != nil {
 		log.Fatalf("err %v\n", err)
 	}
