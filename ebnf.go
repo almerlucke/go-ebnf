@@ -11,7 +11,6 @@ package ebnf
 
 import (
 	"io"
-	"strings"
 )
 
 // MatchResult contains the result of a match
@@ -50,21 +49,7 @@ type TerminalString struct {
 // CharacterGroup pattern, for instance whitespace group
 type CharacterGroup struct {
 	BaseTransformer
-	Group CharacterGroupFunction
-}
-
-// CharacterRange pattern
-type CharacterRange struct {
-	BaseTransformer
-	Low     rune
-	High    rune
-	Outside bool
-}
-
-// CharacterEnum pattern
-type CharacterEnum struct {
-	BaseTransformer
-	Enum    string
+	Group   CharacterGroupFunction
 	Outside bool
 }
 
@@ -152,46 +137,6 @@ func NewCharacterGroupT(t TransformFunction, f CharacterGroupFunction) *Characte
 			T: t,
 		},
 		Group: f,
-	}
-}
-
-// NewCharacterRange creates a new character range
-func NewCharacterRange(low rune, high rune, outside bool) *CharacterRange {
-	return &CharacterRange{
-		Low:     low,
-		High:    high,
-		Outside: outside,
-	}
-}
-
-// NewCharacterRangeT creates a new character range with custom transform function
-func NewCharacterRangeT(t TransformFunction, low rune, high rune, outside bool) *CharacterRange {
-	return &CharacterRange{
-		BaseTransformer: BaseTransformer{
-			T: t,
-		},
-		Low:     low,
-		High:    high,
-		Outside: outside,
-	}
-}
-
-// NewCharacterEnum creates a new character enum
-func NewCharacterEnum(enum string, outside bool) *CharacterEnum {
-	return &CharacterEnum{
-		Enum:    enum,
-		Outside: outside,
-	}
-}
-
-// NewCharacterEnumT creates a new character enum with custom transform function
-func NewCharacterEnumT(t TransformFunction, enum string, outside bool) *CharacterEnum {
-	return &CharacterEnum{
-		BaseTransformer: BaseTransformer{
-			T: t,
-		},
-		Enum:    enum,
-		Outside: outside,
 	}
 }
 
@@ -320,78 +265,15 @@ func (g *CharacterGroup) Match(r *Reader) (*MatchResult, error) {
 		return nil, err
 	}
 
-	result.Match = g.Group(rn)
-	if result.Match {
-		result.Result = r.String()
-		g.Transform(result)
-		r.PopPos()
+	if g.Outside {
+		result.Match = !g.Group(rn)
 	} else {
-		r.RestorePos()
-	}
-
-	return result, nil
-}
-
-// Match a character from a range
-func (cr *CharacterRange) Match(r *Reader) (*MatchResult, error) {
-	r.SavePos()
-
-	result := &MatchResult{Match: false}
-
-	rn, err := r.Read()
-	if err == io.EOF {
-		r.RestorePos()
-		return result, nil
-	}
-
-	if err != nil {
-		r.RestorePos()
-		return nil, err
-	}
-
-	if cr.Outside {
-		result.Match = (rn < cr.Low || rn > cr.High)
-	} else {
-		result.Match = (rn >= cr.Low && rn <= cr.High)
+		result.Match = g.Group(rn)
 	}
 
 	if result.Match {
 		result.Result = r.String()
-		cr.Transform(result)
-		r.PopPos()
-	} else {
-		r.RestorePos()
-	}
-
-	return result, nil
-}
-
-// Match a character from a string enum
-func (ce *CharacterEnum) Match(r *Reader) (*MatchResult, error) {
-	r.SavePos()
-
-	result := &MatchResult{Match: false}
-
-	rn, err := r.Read()
-	if err == io.EOF {
-		r.RestorePos()
-		return result, nil
-	}
-
-	if err != nil {
-		r.RestorePos()
-		return nil, err
-	}
-
-	if ce.Outside {
-		result.Match = !strings.ContainsRune(ce.Enum, rn)
-	} else {
-		result.Match = strings.ContainsRune(ce.Enum, rn)
-	}
-
-	if result.Match {
-		result.Result = r.String()
-		ce.Transform(result)
+		g.Transform(result)
 		r.PopPos()
 	} else {
 		r.RestorePos()

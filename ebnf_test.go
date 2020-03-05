@@ -91,13 +91,13 @@ func programTransform(m *MatchResult) {
 }
 
 func TestEBNF(t *testing.T) {
-	reader := NewReader(strings.NewReader("PROGRAM DEMO1\nBEGIN\nAB:=\"testsa\";\nTESTA:=1772234;\nEND"))
+	reader := NewReader(strings.NewReader("PROGRAM DEMO1\nBEGIN\nAB:=\"testsa\";\nTESTAR:=1772234;\nEND"))
 	ebnf := NewEBNF()
 
 	ebnf.Rules["whitespace"] = NewCharacterGroup(unicode.IsSpace)
 	ebnf.Rules["visible_character"] = NewCharacterGroup(unicode.IsPrint)
 	ebnf.Rules["digit"] = NewCharacterGroup(unicode.IsDigit)
-	ebnf.Rules["alphabetic_character"] = NewCharacterRange('A', 'Z', false)
+	ebnf.Rules["alphabetic_character"] = NewCharacterGroup(NewCharacterGroupRangeFunction('A', 'Z'))
 
 	ebnf.Rules["identifier"] = NewConcatenationT(
 		identifierTransform,
@@ -123,12 +123,8 @@ func TestEBNF(t *testing.T) {
 
 	ebnf.Rules["program"] = NewConcatenationT(
 		programTransform,
-		NewTerminalString("PROGRAM"),
-		ebnf.Rules["whitespace"],
-		ebnf.Rules["identifier"],
-		ebnf.Rules["whitespace"],
-		NewTerminalString("BEGIN"),
-		ebnf.Rules["whitespace"],
+		NewTerminalString("PROGRAM"), ebnf.Rules["whitespace"], ebnf.Rules["identifier"], ebnf.Rules["whitespace"],
+		NewTerminalString("BEGIN"), ebnf.Rules["whitespace"],
 		NewRepetition(0, 0, NewConcatenation(
 			ebnf.Rules["assignment"],
 			NewTerminalString(";"),
