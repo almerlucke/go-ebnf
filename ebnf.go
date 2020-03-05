@@ -104,7 +104,7 @@ func (s *TerminalString) Match(r *Reader) (*MatchResult, error) {
 	return result, nil
 }
 
-// CharacterGroup pattern, for instance whitespace group
+// CharacterGroup pattern, test membership of a group, for instance whitespace group
 type CharacterGroup struct {
 	BaseTransformer
 	Group   CharacterGroupFunction
