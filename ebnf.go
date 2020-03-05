@@ -36,21 +36,26 @@ type Transformer interface {
 	Transform(m *MatchResult)
 }
 
+// BaseTransformer implements transformer interface
+type BaseTransformer struct {
+	T TransformFunction
+}
+
 // TerminalString pattern
 type TerminalString struct {
-	T      TransformFunction
+	BaseTransformer
 	String string
 }
 
 // CharacterGroup pattern, for instance whitespace group
 type CharacterGroup struct {
-	T     TransformFunction
+	BaseTransformer
 	Group CharacterGroupFunction
 }
 
 // CharacterRange pattern
 type CharacterRange struct {
-	T       TransformFunction
+	BaseTransformer
 	Low     rune
 	High    rune
 	Outside bool
@@ -58,26 +63,26 @@ type CharacterRange struct {
 
 // CharacterEnum pattern
 type CharacterEnum struct {
-	T       TransformFunction
+	BaseTransformer
 	Enum    string
 	Outside bool
 }
 
 // Alternation pattern
 type Alternation struct {
-	T        TransformFunction
+	BaseTransformer
 	Patterns []Pattern
 }
 
 // Concatenation pattern
 type Concatenation struct {
-	T        TransformFunction
+	BaseTransformer
 	Patterns []Pattern
 }
 
 // Repetition pattern
 type Repetition struct {
-	T       TransformFunction
+	BaseTransformer
 	Min     int
 	Max     int
 	Pattern Pattern
@@ -85,7 +90,7 @@ type Repetition struct {
 
 // Exception pattern
 type Exception struct {
-	T         TransformFunction
+	BaseTransformer
 	MustMatch Pattern
 	Except    Pattern
 }
@@ -109,59 +114,158 @@ func (e *EBNF) Match(r *Reader) (*MatchResult, error) {
 	return e.Rules[e.RootRule].Match(r)
 }
 
-// Transform matchResult
-func (s *TerminalString) Transform(m *MatchResult) {
-	if s.T != nil {
-		s.T(m)
+// Transform for base transformer
+func (b *BaseTransformer) Transform(m *MatchResult) {
+	if b.T != nil {
+		b.T(m)
 	}
 }
 
-// Transform matchResult
-func (g *CharacterGroup) Transform(m *MatchResult) {
-	if g.T != nil {
-		g.T(m)
+// NewTerminalString creates a new terminal string
+func NewTerminalString(s string) *TerminalString {
+	return &TerminalString{
+		String: s,
 	}
 }
 
-// Transform matchResult
-func (cr *CharacterRange) Transform(m *MatchResult) {
-	if cr.T != nil {
-		cr.T(m)
+// NewTerminalStringT creates a new terminal string with custom transform function
+func NewTerminalStringT(t TransformFunction, s string) *TerminalString {
+	return &TerminalString{
+		BaseTransformer: BaseTransformer{
+			T: t,
+		},
+		String: s,
 	}
 }
 
-// Transform matchResult
-func (ce *CharacterEnum) Transform(m *MatchResult) {
-	if ce.T != nil {
-		ce.T(m)
+// NewCharacterGroup creates a new character group
+func NewCharacterGroup(f CharacterGroupFunction) *CharacterGroup {
+	return &CharacterGroup{
+		Group: f,
 	}
 }
 
-// Transform matchResult
-func (a *Alternation) Transform(m *MatchResult) {
-	if a.T != nil {
-		a.T(m)
+// NewCharacterGroupT creates a new character group with custom transform function
+func NewCharacterGroupT(t TransformFunction, f CharacterGroupFunction) *CharacterGroup {
+	return &CharacterGroup{
+		BaseTransformer: BaseTransformer{
+			T: t,
+		},
+		Group: f,
 	}
 }
 
-// Transform matchResult
-func (c *Concatenation) Transform(m *MatchResult) {
-	if c.T != nil {
-		c.T(m)
+// NewCharacterRange creates a new character range
+func NewCharacterRange(low rune, high rune, outside bool) *CharacterRange {
+	return &CharacterRange{
+		Low:     low,
+		High:    high,
+		Outside: outside,
 	}
 }
 
-// Transform matchResult
-func (e *Exception) Transform(m *MatchResult) {
-	if e.T != nil {
-		e.T(m)
+// NewCharacterRangeT creates a new character range with custom transform function
+func NewCharacterRangeT(t TransformFunction, low rune, high rune, outside bool) *CharacterRange {
+	return &CharacterRange{
+		BaseTransformer: BaseTransformer{
+			T: t,
+		},
+		Low:     low,
+		High:    high,
+		Outside: outside,
 	}
 }
 
-// Transform matchResult
-func (rep *Repetition) Transform(m *MatchResult) {
-	if rep.T != nil {
-		rep.T(m)
+// NewCharacterEnum creates a new character enum
+func NewCharacterEnum(enum string, outside bool) *CharacterEnum {
+	return &CharacterEnum{
+		Enum:    enum,
+		Outside: outside,
+	}
+}
+
+// NewCharacterEnumT creates a new character enum with custom transform function
+func NewCharacterEnumT(t TransformFunction, enum string, outside bool) *CharacterEnum {
+	return &CharacterEnum{
+		BaseTransformer: BaseTransformer{
+			T: t,
+		},
+		Enum:    enum,
+		Outside: outside,
+	}
+}
+
+// NewAlternation creates a new alternation pattern
+func NewAlternation(patterns ...Pattern) *Alternation {
+	return &Alternation{
+		Patterns: patterns,
+	}
+}
+
+// NewAlternationT creates a new alternation pattern with custom transform function
+func NewAlternationT(t TransformFunction, patterns ...Pattern) *Alternation {
+	return &Alternation{
+		Patterns: patterns,
+		BaseTransformer: BaseTransformer{
+			T: t,
+		},
+	}
+}
+
+// NewConcatenation creates a new concatenation pattern
+func NewConcatenation(patterns ...Pattern) *Concatenation {
+	return &Concatenation{
+		Patterns: patterns,
+	}
+}
+
+// NewConcatenationT creates a new concatenation pattern with custom transform function
+func NewConcatenationT(t TransformFunction, patterns ...Pattern) *Concatenation {
+	return &Concatenation{
+		Patterns: patterns,
+		BaseTransformer: BaseTransformer{
+			T: t,
+		},
+	}
+}
+
+// NewRepetition creates a new repetition pattern
+func NewRepetition(min int, max int, p Pattern) *Repetition {
+	return &Repetition{
+		Min:     min,
+		Max:     max,
+		Pattern: p,
+	}
+}
+
+// NewRepetitionT creates a new repetition pattern with custom transform function
+func NewRepetitionT(t TransformFunction, min int, max int, p Pattern) *Repetition {
+	return &Repetition{
+		BaseTransformer: BaseTransformer{
+			T: t,
+		},
+		Min:     min,
+		Max:     max,
+		Pattern: p,
+	}
+}
+
+// NewException creates a new exception
+func NewException(mustMatch Pattern, except Pattern) *Exception {
+	return &Exception{
+		MustMatch: mustMatch,
+		Except:    except,
+	}
+}
+
+// NewExceptionT creates a new exception with custom transform function
+func NewExceptionT(t TransformFunction, mustMatch Pattern, except Pattern) *Exception {
+	return &Exception{
+		BaseTransformer: BaseTransformer{
+			T: t,
+		},
+		MustMatch: mustMatch,
+		Except:    except,
 	}
 }
 

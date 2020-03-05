@@ -91,92 +91,51 @@ func programTransform(m *MatchResult) {
 }
 
 func TestEBNF(t *testing.T) {
-	reader := NewReader(strings.NewReader("PROGRAM DEMO1\nBEGIN\nA:=\"testa\";\nTESTAL:=12234;\nEND"))
+	reader := NewReader(strings.NewReader("PROGRAM DEMO1\nBEGIN\nAB:=\"testsa\";\nTESTA:=1772234;\nEND"))
 	ebnf := NewEBNF()
 
-	ebnf.Rules["whitespace"] = &CharacterGroup{Group: unicode.IsSpace}
-	ebnf.Rules["visible_character"] = &CharacterGroup{Group: unicode.IsPrint}
-	ebnf.Rules["digit"] = &CharacterGroup{Group: unicode.IsDigit}
-	ebnf.Rules["alphabetic_character"] = &CharacterRange{Low: 'A', High: 'Z'}
+	ebnf.Rules["whitespace"] = NewCharacterGroup(unicode.IsSpace)
+	ebnf.Rules["visible_character"] = NewCharacterGroup(unicode.IsPrint)
+	ebnf.Rules["digit"] = NewCharacterGroup(unicode.IsDigit)
+	ebnf.Rules["alphabetic_character"] = NewCharacterRange('A', 'Z', false)
 
-	ebnf.Rules["identifier"] = &Concatenation{
-		T: identifierTransform,
-		Patterns: []Pattern{
-			ebnf.Rules["alphabetic_character"],
-			&Repetition{
-				Min: 0,
-				Max: 0,
-				Pattern: &Alternation{
-					Patterns: []Pattern{
-						ebnf.Rules["alphabetic_character"],
-						ebnf.Rules["digit"],
-					},
-				},
-			},
-		},
-	}
+	ebnf.Rules["identifier"] = NewConcatenationT(
+		identifierTransform,
+		ebnf.Rules["alphabetic_character"],
+		NewRepetition(0, 0, NewAlternation(ebnf.Rules["alphabetic_character"], ebnf.Rules["digit"])),
+	)
 
-	ebnf.Rules["number"] = &Repetition{
-		T:       numberTransform,
-		Min:     1,
-		Max:     0,
-		Pattern: ebnf.Rules["digit"],
-	}
+	ebnf.Rules["number"] = NewRepetitionT(numberTransform, 1, 0, ebnf.Rules["digit"])
 
-	ebnf.Rules["string"] = &Concatenation{
-		T: stringTransform,
-		Patterns: []Pattern{
-			&TerminalString{String: "\""},
-			&Repetition{
-				Min: 0,
-				Max: 0,
-				Pattern: &Exception{
-					MustMatch: ebnf.Rules["visible_character"],
-					Except:    &TerminalString{String: "\""},
-				},
-			},
-			&TerminalString{String: "\""},
-		},
-	}
+	ebnf.Rules["string"] = NewConcatenationT(
+		stringTransform,
+		NewTerminalString("\""),
+		NewRepetition(0, 0, NewException(ebnf.Rules["visible_character"], NewTerminalString("\""))),
+		NewTerminalString("\""),
+	)
 
-	ebnf.Rules["assignment"] = &Concatenation{
-		T: assignmentTransform,
-		Patterns: []Pattern{
-			ebnf.Rules["identifier"],
-			&TerminalString{String: ":="},
-			&Alternation{
-				Patterns: []Pattern{
-					ebnf.Rules["number"],
-					ebnf.Rules["identifier"],
-					ebnf.Rules["string"],
-				},
-			},
-		},
-	}
+	ebnf.Rules["assignment"] = NewConcatenationT(
+		assignmentTransform,
+		ebnf.Rules["identifier"],
+		NewTerminalString(":="),
+		NewAlternation(ebnf.Rules["number"], ebnf.Rules["identifier"], ebnf.Rules["string"]),
+	)
 
-	ebnf.Rules["program"] = &Concatenation{
-		T: programTransform,
-		Patterns: []Pattern{
-			&TerminalString{String: "PROGRAM"},
+	ebnf.Rules["program"] = NewConcatenationT(
+		programTransform,
+		NewTerminalString("PROGRAM"),
+		ebnf.Rules["whitespace"],
+		ebnf.Rules["identifier"],
+		ebnf.Rules["whitespace"],
+		NewTerminalString("BEGIN"),
+		ebnf.Rules["whitespace"],
+		NewRepetition(0, 0, NewConcatenation(
+			ebnf.Rules["assignment"],
+			NewTerminalString(";"),
 			ebnf.Rules["whitespace"],
-			ebnf.Rules["identifier"],
-			ebnf.Rules["whitespace"],
-			&TerminalString{String: "BEGIN"},
-			ebnf.Rules["whitespace"],
-			&Repetition{
-				Min: 0,
-				Max: 0,
-				Pattern: &Concatenation{
-					Patterns: []Pattern{
-						ebnf.Rules["assignment"],
-						&TerminalString{String: ";"},
-						ebnf.Rules["whitespace"],
-					},
-				},
-			},
-			&TerminalString{String: "END"},
-		},
-	}
+		)),
+		NewTerminalString("END"),
+	)
 
 	ebnf.RootRule = "program"
 
