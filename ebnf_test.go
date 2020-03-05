@@ -91,7 +91,7 @@ func programTransform(m *MatchResult) {
 }
 
 func TestEBNF(t *testing.T) {
-	reader := NewReader(strings.NewReader("PROGRAM DEMO1\nBEGIN\nAB:=\"testsa\";\nTESTAR:=1772234;\nEND"))
+	reader := NewReader(strings.NewReader("PROGRAM DEMO12\nBEGIN\nAB:=\"testsa\";\nTESTAR:=1772234;\nEND"))
 	ebnf := NewEBNF()
 
 	ebnf.Rules["whitespace"] = NewCharacterGroup(unicode.IsSpace)
