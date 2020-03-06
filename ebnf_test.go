@@ -99,40 +99,33 @@ func TestEBNF(t *testing.T) {
 	ebnf.Rules["digit"] = NewCharacterGroup(unicode.IsDigit)
 	ebnf.Rules["alphabetic_character"] = NewCharacterGroup(NewCharacterGroupRangeFunction('A', 'Z'))
 
-	ebnf.Rules["identifier"] = NewConcatenationT(
-		identifierTransform,
+	ebnf.Rules["identifier"] = NewConcatenationT(identifierTransform,
 		ebnf.Rules["alphabetic_character"],
 		NewRepetition(0, 0, NewAlternation(ebnf.Rules["alphabetic_character"], ebnf.Rules["digit"])),
 	)
 
-	ebnf.Rules["number"] = NewRepetitionT(numberTransform, 1, 0, ebnf.Rules["digit"])
+	ebnf.Rules["number"] = NewRepetitionT(numberTransform,
+		1, 0, ebnf.Rules["digit"],
+	)
 
-	ebnf.Rules["string"] = NewConcatenationT(
-		stringTransform,
+	ebnf.Rules["string"] = NewConcatenationT(stringTransform,
 		NewTerminalString("\""),
 		NewRepetition(0, 0, NewException(ebnf.Rules["visible_character"], NewTerminalString("\""))),
 		NewTerminalString("\""),
 	)
 
-	ebnf.Rules["assignment"] = NewConcatenationT(
-		assignmentTransform,
-		ebnf.Rules["identifier"],
-		NewTerminalString(":="),
-		NewAlternation(ebnf.Rules["number"], ebnf.Rules["identifier"], ebnf.Rules["string"]),
+	ebnf.Rules["assignment"] = NewConcatenationT(assignmentTransform,
+		ebnf.Rules["identifier"], NewTerminalString(":="), NewAlternation(ebnf.Rules["number"], ebnf.Rules["identifier"], ebnf.Rules["string"]),
 	)
 
-	ebnf.Rules["program"] = NewConcatenationT(
-		programTransform,
+	ebnf.Rules["program"] = NewConcatenationT(programTransform,
 		NewTerminalString("PROGRAM"), ebnf.Rules["whitespace"], ebnf.Rules["identifier"], ebnf.Rules["whitespace"],
 		NewTerminalString("BEGIN"), ebnf.Rules["whitespace"],
-		NewRepetition(0, 0, NewConcatenation(
-			ebnf.Rules["assignment"],
-			NewTerminalString(";"),
-			ebnf.Rules["whitespace"],
-		)),
+		NewRepetition(0, 0, NewConcatenation(ebnf.Rules["assignment"], NewTerminalString(";"), ebnf.Rules["whitespace"])),
 		NewTerminalString("END"),
 	)
 
+	// Assign the root rule as starting point
 	ebnf.RootRule = "program"
 
 	result, err := ebnf.Match(reader)
