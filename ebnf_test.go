@@ -91,7 +91,7 @@ func programTransform(m *MatchResult) {
 }
 
 func TestEBNF(t *testing.T) {
-	reader := NewReader(strings.NewReader("PROGRAM DEMO12\nBEGIN\nAB:=\"testsa\";\nTESTAR:=1772234;\nEND"))
+	reader := NewReader(strings.NewReader("PROGRAM DEMO12\nBEGIN\nAB:=\"testsa 123!!!\";\nTESTAR:=1772234;\nEND"))
 	ebnf := NewEBNF()
 
 	ebnf.Rules["whitespace"] = NewCharacterGroup(unicode.IsSpace)
@@ -104,9 +104,7 @@ func TestEBNF(t *testing.T) {
 		NewRepetition(0, 0, NewAlternation(ebnf.Rules["alphabetic_character"], ebnf.Rules["digit"])),
 	)
 
-	ebnf.Rules["number"] = NewRepetitionT(numberTransform,
-		1, 0, ebnf.Rules["digit"],
-	)
+	ebnf.Rules["number"] = NewRepetitionT(numberTransform, 1, 0, ebnf.Rules["digit"])
 
 	ebnf.Rules["string"] = NewConcatenationT(stringTransform,
 		NewTerminalString("\""),
