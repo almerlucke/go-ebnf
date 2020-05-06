@@ -410,6 +410,38 @@ func (e *Exception) Match(r *Reader) (result *MatchResult, err error) {
 	return
 }
 
+// EOF pattern
+type EOF struct {
+	BaseTransformer
+}
+
+// NewEOF creates a new end of file
+func NewEOF() *EOF {
+	return &EOF{}
+}
+
+// NewEOFT creates a new end of ile with custom transform function
+func NewEOFT(t TransformFunction) *EOF {
+	return &EOF{
+		BaseTransformer: BaseTransformer{
+			T: t,
+		},
+	}
+}
+
+// Match end of file pattern
+func (e *EOF) Match(r *Reader) (result *MatchResult, err error) {
+	var match bool
+
+	match, err = r.Finished()
+
+	result = &MatchResult{
+		Match: match,
+	}
+
+	return
+}
+
 // EBNF pattern
 type EBNF struct {
 	RootRule string

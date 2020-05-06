@@ -143,3 +143,34 @@ func TestEBNF(t *testing.T) {
 		log.Printf("no match\n")
 	}
 }
+
+func TestLanguage(t *testing.T) {
+	reader := NewReader(strings.NewReader(`"😃d@d\d"`))
+	ebnf := NewEBNF()
+
+	ebnf.Rules["quote"] = NewTerminalString(`"`)
+	ebnf.Rules["backslash"] = NewTerminalString(`\`)
+	ebnf.Rules["is_graphic"] = NewCharacterGroup(unicode.IsGraphic)
+	ebnf.Rules["string"] = NewConcatenation(
+		ebnf.Rules["quote"],
+		NewRepetition(0, 0, NewAlternation(
+			NewConcatenation(ebnf.Rules["backslash"], ebnf.Rules["graphic_character"]),
+			NewException(ebnf.Rules["is_graphic"], ebnf.Rules["quote"]),
+		)),
+		ebnf.Rules["quote"],
+	)
+	ebnf.Rules["program"] = NewConcatenation(ebnf.Rules["string"], NewEOF())
+
+	ebnf.RootRule = "program"
+
+	result, err := ebnf.Match(reader)
+	if err != nil {
+		log.Fatalf("err %v\n", err)
+	}
+
+	if result.Match {
+		log.Printf("result.Result %v\n", result.Result)
+	} else {
+		log.Printf("no match!")
+	}
+}
