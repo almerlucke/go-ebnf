@@ -11,6 +11,7 @@ package ebnf
 
 import (
 	"io"
+	"log"
 )
 
 // MatchResult contains the result of a match
@@ -72,14 +73,15 @@ func NewTerminalStringT(t TransformFunction, s string) *TerminalString {
 
 // Match a terminal string
 func (s *TerminalString) Match(r *Reader) (*MatchResult, error) {
-	r.SavePos()
+	r.PushState()
 
 	result := &MatchResult{Match: false}
 
 	for _, rn1 := range []rune(s.String) {
 		rn2, err := r.Read()
+		log.Printf("rn2 %v\n", rn2)
 		if err != nil {
-			r.RestorePos()
+			r.RestoreState()
 
 			if err == io.EOF {
 				return result, nil
@@ -89,7 +91,7 @@ func (s *TerminalString) Match(r *Reader) (*MatchResult, error) {
 		}
 
 		if rn1 != rn2 {
-			r.RestorePos()
+			r.RestoreState()
 			return result, nil
 		}
 	}
@@ -99,7 +101,7 @@ func (s *TerminalString) Match(r *Reader) (*MatchResult, error) {
 
 	s.Transform(result)
 
-	r.PopPos()
+	r.PopState()
 
 	return result, nil
 }
@@ -130,18 +132,18 @@ func NewCharacterGroupT(t TransformFunction, f CharacterGroupFunction) *Characte
 
 // Match a character from a group
 func (g *CharacterGroup) Match(r *Reader) (*MatchResult, error) {
-	r.SavePos()
+	r.PushState()
 
 	result := &MatchResult{Match: false}
 
 	rn, err := r.Read()
 	if err == io.EOF {
-		r.RestorePos()
+		r.RestoreState()
 		return result, nil
 	}
 
 	if err != nil {
-		r.RestorePos()
+		r.RestoreState()
 		return nil, err
 	}
 
@@ -154,9 +156,9 @@ func (g *CharacterGroup) Match(r *Reader) (*MatchResult, error) {
 	if result.Match {
 		result.Result = r.String()
 		g.Transform(result)
-		r.PopPos()
+		r.PopState()
 	} else {
-		r.RestorePos()
+		r.RestoreState()
 	}
 
 	return result, nil
@@ -188,30 +190,27 @@ func NewAlternationT(t TransformFunction, patterns ...Pattern) *Alternation {
 // Match alternation pattern, matches if one of the alternating patterns matches
 func (a *Alternation) Match(r *Reader) (*MatchResult, error) {
 	for _, p := range a.Patterns {
-		finished, err := r.Finished()
-		if err != nil {
-			return nil, err
-		}
+		finished := r.Finished()
 
 		if finished {
 			break
 		}
 
-		r.SavePos()
+		r.PushState()
 
 		result, err := p.Match(r)
 		if err != nil {
-			r.RestorePos()
+			r.RestoreState()
 			return nil, err
 		}
 
 		if result.Match {
 			a.Transform(result)
-			r.PopPos()
+			r.PopState()
 			return result, nil
 		}
 
-		r.RestorePos()
+		r.RestoreState()
 	}
 
 	return &MatchResult{
@@ -246,17 +245,17 @@ func NewConcatenationT(t TransformFunction, patterns ...Pattern) *Concatenation 
 func (c *Concatenation) Match(r *Reader) (*MatchResult, error) {
 	matches := []*MatchResult{}
 
-	r.SavePos()
+	r.PushState()
 
 	for _, p := range c.Patterns {
 		result, err := p.Match(r)
 		if err != nil {
-			r.RestorePos()
+			r.RestoreState()
 			return nil, err
 		}
 
 		if !result.Match {
-			r.RestorePos()
+			r.RestoreState()
 			return &MatchResult{
 				Match: false,
 			}, nil
@@ -265,7 +264,7 @@ func (c *Concatenation) Match(r *Reader) (*MatchResult, error) {
 		matches = append(matches, result)
 	}
 
-	r.PopPos()
+	r.PopState()
 
 	result := &MatchResult{
 		Match:  true,
@@ -310,22 +309,17 @@ func NewRepetitionT(t TransformFunction, min int, max int, p Pattern) *Repetitio
 func (rep *Repetition) Match(r *Reader) (*MatchResult, error) {
 	matches := []*MatchResult{}
 
-	r.SavePos()
+	r.PushState()
 
 	for {
-		finished, err := r.Finished()
-		if err != nil {
-			r.RestorePos()
-			return nil, err
-		}
-
+		finished := r.Finished()
 		if finished {
 			break
 		}
 
 		result, err := rep.Pattern.Match(r)
 		if err != nil {
-			r.RestorePos()
+			r.RestoreState()
 			return nil, err
 		}
 
@@ -341,13 +335,13 @@ func (rep *Repetition) Match(r *Reader) (*MatchResult, error) {
 	}
 
 	if len(matches) < rep.Min {
-		r.RestorePos()
+		r.RestoreState()
 		return &MatchResult{
 			Match: false,
 		}, nil
 	}
 
-	r.PopPos()
+	r.PopState()
 
 	result := &MatchResult{
 		Match:  true,
@@ -387,7 +381,7 @@ func NewExceptionT(t TransformFunction, mustMatch Pattern, except Pattern) *Exce
 
 // Match exception pattern
 func (e *Exception) Match(r *Reader) (result *MatchResult, err error) {
-	r.SavePos()
+	r.PushState()
 
 	result, err = e.Except.Match(r)
 	if err != nil {
@@ -395,13 +389,13 @@ func (e *Exception) Match(r *Reader) (result *MatchResult, err error) {
 	}
 
 	if result.Match {
-		r.RestorePos()
+		r.RestoreState()
 		result.Match = false
 		result.Result = nil
 		return
 	}
 
-	r.PopPos()
+	r.PopState()
 
 	result, err = e.MustMatch.Match(r)
 
@@ -420,7 +414,7 @@ func NewEOF() *EOF {
 	return &EOF{}
 }
 
-// NewEOFT creates a new end of ile with custom transform function
+// NewEOFT creates a new end of file with custom transform function
 func NewEOFT(t TransformFunction) *EOF {
 	return &EOF{
 		BaseTransformer: BaseTransformer{
@@ -431,9 +425,7 @@ func NewEOFT(t TransformFunction) *EOF {
 
 // Match end of file pattern
 func (e *EOF) Match(r *Reader) (result *MatchResult, err error) {
-	var match bool
-
-	match, err = r.Finished()
+	match := r.Finished()
 
 	result = &MatchResult{
 		Match: match,
@@ -449,10 +441,10 @@ type EBNF struct {
 }
 
 // NewEBNF creates a new EBNF parser
-func NewEBNF() *EBNF {
+func NewEBNF(rootrule string, rules map[string]Pattern) *EBNF {
 	return &EBNF{
-		RootRule: "",
-		Rules:    map[string]Pattern{},
+		RootRule: rootrule,
+		Rules:    rules,
 	}
 }
 

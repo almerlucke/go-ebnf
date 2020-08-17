@@ -91,8 +91,13 @@ func programTransform(m *MatchResult) {
 }
 
 func TestEBNF(t *testing.T) {
-	reader := NewReader(strings.NewReader("PROGRAM DEMO12\nBEGIN\nAB:=\"testsa 123!!!\";\nTESTAR:=1772234;\nEND"))
-	ebnf := NewEBNF()
+	reader, err := NewReader(strings.NewReader("PROGRAM DEMO12\nBEGIN\nAB:=\"testsa 123!!!\";\nTESTAR:=1772234;\nEND"))
+	if err != nil {
+		t.Errorf("err %v", err)
+		t.FailNow()
+	}
+
+	ebnf := NewEBNF("", map[string]Pattern{})
 
 	ebnf.Rules["whitespace"] = NewCharacterGroup(unicode.IsSpace)
 	ebnf.Rules["visible_character"] = NewCharacterGroup(unicode.IsPrint)
@@ -145,8 +150,13 @@ func TestEBNF(t *testing.T) {
 }
 
 func TestLanguage(t *testing.T) {
-	reader := NewReader(strings.NewReader(`"😃d@d\d"`))
-	ebnf := NewEBNF()
+	reader, err := NewReader(strings.NewReader(`"😃d@d\d"`))
+	if err != nil {
+		t.Errorf("err %v", err)
+		t.FailNow()
+	}
+
+	ebnf := NewEBNF("", map[string]Pattern{})
 
 	ebnf.Rules["quote"] = NewTerminalString(`"`)
 	ebnf.Rules["backslash"] = NewTerminalString(`\`)
@@ -154,7 +164,7 @@ func TestLanguage(t *testing.T) {
 	ebnf.Rules["string"] = NewConcatenation(
 		ebnf.Rules["quote"],
 		NewRepetition(0, 0, NewAlternation(
-			NewConcatenation(ebnf.Rules["backslash"], ebnf.Rules["graphic_character"]),
+			NewConcatenation(ebnf.Rules["backslash"], ebnf.Rules["is_graphic"]),
 			NewException(ebnf.Rules["is_graphic"], ebnf.Rules["quote"]),
 		)),
 		ebnf.Rules["quote"],
