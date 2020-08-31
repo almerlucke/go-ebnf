@@ -61,6 +61,8 @@ func stringTransform(m *MatchResult) {
 }
 
 func assignmentTransform(m *MatchResult) {
+	log.Printf("assignment: %v - %v\n", *m.BeginPos, *m.EndPos)
+
 	params := m.Result.([]*MatchResult)
 	identifier := params[0].Result.(string)
 	value := params[2].Result.(string)
@@ -97,41 +99,34 @@ func TestEBNF(t *testing.T) {
 		t.FailNow()
 	}
 
-	ebnf := NewEBNF("", map[string]Pattern{})
-
-	ebnf.Rules["whitespace"] = NewCharacterGroup(unicode.IsSpace)
-	ebnf.Rules["visible_character"] = NewCharacterGroup(unicode.IsPrint)
-	ebnf.Rules["digit"] = NewCharacterGroup(unicode.IsDigit)
-	ebnf.Rules["alphabetic_character"] = NewCharacterGroup(NewCharacterGroupRangeFunction('A', 'Z'))
-
-	ebnf.Rules["identifier"] = NewConcatenationT(identifierTransform,
-		ebnf.Rules["alphabetic_character"],
-		NewRepetition(0, 0, NewAlternation(ebnf.Rules["alphabetic_character"], ebnf.Rules["digit"])),
+	whitespace := NewRepetition(1, 0, NewCharacterGroup(unicode.IsSpace, false))
+	visibleCharacter := NewCharacterGroup(unicode.IsPrint, false)
+	digit := NewCharacterGroup(unicode.IsDigit, false)
+	alphabeticCharacter := NewCharacterGroup(NewCharacterGroupRangeFunction('A', 'Z'), false)
+	identifier := NewConcatenationT(identifierTransform,
+		alphabeticCharacter,
+		NewRepetition(0, 0, NewAlternation(alphabeticCharacter, digit)),
 	)
-
-	ebnf.Rules["number"] = NewRepetitionT(numberTransform, 1, 0, ebnf.Rules["digit"])
-
-	ebnf.Rules["string"] = NewConcatenationT(stringTransform,
+	number := NewRepetitionT(numberTransform, 1, 0, digit)
+	stringRule := NewConcatenationT(stringTransform,
 		NewTerminalString("\""),
-		NewRepetition(0, 0, NewException(ebnf.Rules["visible_character"], NewTerminalString("\""))),
+		NewRepetition(0, 0, NewException(visibleCharacter, NewTerminalString("\""))),
 		NewTerminalString("\""),
 	)
 
-	ebnf.Rules["assignment"] = NewConcatenationT(assignmentTransform,
-		ebnf.Rules["identifier"], NewTerminalString(":="), NewAlternation(ebnf.Rules["number"], ebnf.Rules["identifier"], ebnf.Rules["string"]),
+	assignment := NewConcatenationT(assignmentTransform,
+		identifier, NewTerminalString(":="), NewAlternation(number, identifier, stringRule),
 	)
 
-	ebnf.Rules["program"] = NewConcatenationT(programTransform,
-		NewTerminalString("PROGRAM"), ebnf.Rules["whitespace"], ebnf.Rules["identifier"], ebnf.Rules["whitespace"],
-		NewTerminalString("BEGIN"), ebnf.Rules["whitespace"],
-		NewRepetition(0, 0, NewConcatenation(ebnf.Rules["assignment"], NewTerminalString(";"), ebnf.Rules["whitespace"])),
+	programRule := NewConcatenationT(
+		programTransform,
+		NewTerminalString("PROGRAM"), whitespace, identifier, whitespace,
+		NewTerminalString("BEGIN"), whitespace,
+		NewRepetition(0, 0, NewConcatenation(assignment, NewTerminalString(";"), whitespace)),
 		NewTerminalString("END"),
 	)
 
-	// Assign the root rule as starting point
-	ebnf.RootRule = "program"
-
-	result, err := ebnf.Match(reader)
+	result, err := programRule.Match(reader)
 	if err != nil {
 		log.Fatalf("err %v\n", err)
 	}
@@ -149,31 +144,57 @@ func TestEBNF(t *testing.T) {
 	}
 }
 
+func complexStringBackslashTransform(m *MatchResult) {
+	backslashElements := m.Result.([]*MatchResult)
+	escapedChar := backslashElements[1].Result.(string)
+
+	if escapedChar == "n" {
+		escapedChar = "\n"
+	} else if escapedChar == "t" {
+		escapedChar = "\t"
+	} else if escapedChar == "r" {
+		escapedChar = "\r"
+	}
+
+	m.Result = escapedChar
+}
+
+func complexStringTransform(m *MatchResult) {
+	stringBaseElements := m.Result.([]*MatchResult)
+	stringRepeatedElements := stringBaseElements[1].Result.([]*MatchResult)
+
+	var builder strings.Builder
+
+	for _, element := range stringRepeatedElements {
+		builder.WriteString(element.Result.(string))
+	}
+
+	m.Result = builder.String()
+
+	log.Printf("string: %v\n", m.Result)
+}
+
 func TestLanguage(t *testing.T) {
-	reader, err := NewReader(strings.NewReader(`"😃d@d\d"`))
+	reader, err := NewReader(strings.NewReader(`"😃d@d\td"`))
 	if err != nil {
 		t.Errorf("err %v", err)
 		t.FailNow()
 	}
 
-	ebnf := NewEBNF("", map[string]Pattern{})
-
-	ebnf.Rules["quote"] = NewTerminalString(`"`)
-	ebnf.Rules["backslash"] = NewTerminalString(`\`)
-	ebnf.Rules["is_graphic"] = NewCharacterGroup(unicode.IsGraphic)
-	ebnf.Rules["string"] = NewConcatenation(
-		ebnf.Rules["quote"],
+	quoteRule := NewTerminalString(`"`)
+	backslashRule := NewTerminalString(`\`)
+	isGraphicRule := NewCharacterGroup(unicode.IsGraphic, false)
+	stringRule := NewConcatenationT(
+		complexStringTransform,
+		quoteRule,
 		NewRepetition(0, 0, NewAlternation(
-			NewConcatenation(ebnf.Rules["backslash"], ebnf.Rules["is_graphic"]),
-			NewException(ebnf.Rules["is_graphic"], ebnf.Rules["quote"]),
+			NewConcatenationT(complexStringBackslashTransform, backslashRule, isGraphicRule),
+			NewException(isGraphicRule, quoteRule),
 		)),
-		ebnf.Rules["quote"],
+		quoteRule,
 	)
-	ebnf.Rules["program"] = NewConcatenation(ebnf.Rules["string"], NewEOF())
 
-	ebnf.RootRule = "program"
-
-	result, err := ebnf.Match(reader)
+	result, err := stringRule.Match(reader)
 	if err != nil {
 		log.Fatalf("err %v\n", err)
 	}

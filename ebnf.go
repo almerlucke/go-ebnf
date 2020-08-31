@@ -11,20 +11,18 @@ package ebnf
 
 import (
 	"io"
-	"log"
 )
 
 // MatchResult contains the result of a match
 type MatchResult struct {
-	Match  bool
-	Result interface{}
+	Match    bool
+	BeginPos *ReaderPos
+	EndPos   *ReaderPos
+	Result   interface{}
 }
 
-// TransformFunction for match result
+// TransformFunction for match result, this allows for custom transform of the result
 type TransformFunction func(r *MatchResult)
-
-// CharacterGroupFunction check if rune is part of group
-type CharacterGroupFunction func(r rune) bool
 
 // Pattern to match
 type Pattern interface {
@@ -73,13 +71,14 @@ func NewTerminalStringT(t TransformFunction, s string) *TerminalString {
 
 // Match a terminal string
 func (s *TerminalString) Match(r *Reader) (*MatchResult, error) {
+	beginPos := r.CurrentPosition()
+
 	r.PushState()
 
 	result := &MatchResult{Match: false}
 
 	for _, rn1 := range []rune(s.String) {
 		rn2, err := r.Read()
-		log.Printf("rn2 %v\n", rn2)
 		if err != nil {
 			r.RestoreState()
 
@@ -96,70 +95,14 @@ func (s *TerminalString) Match(r *Reader) (*MatchResult, error) {
 		}
 	}
 
+	result.BeginPos = beginPos
+	result.EndPos = r.CurrentPosition()
 	result.Match = true
 	result.Result = r.String()
 
 	s.Transform(result)
 
 	r.PopState()
-
-	return result, nil
-}
-
-// CharacterGroup pattern, test membership of a group, for instance whitespace group
-type CharacterGroup struct {
-	BaseTransformer
-	Group   CharacterGroupFunction
-	Outside bool
-}
-
-// NewCharacterGroup creates a new character group
-func NewCharacterGroup(f CharacterGroupFunction) *CharacterGroup {
-	return &CharacterGroup{
-		Group: f,
-	}
-}
-
-// NewCharacterGroupT creates a new character group with custom transform function
-func NewCharacterGroupT(t TransformFunction, f CharacterGroupFunction) *CharacterGroup {
-	return &CharacterGroup{
-		BaseTransformer: BaseTransformer{
-			T: t,
-		},
-		Group: f,
-	}
-}
-
-// Match a character from a group
-func (g *CharacterGroup) Match(r *Reader) (*MatchResult, error) {
-	r.PushState()
-
-	result := &MatchResult{Match: false}
-
-	rn, err := r.Read()
-	if err == io.EOF {
-		r.RestoreState()
-		return result, nil
-	}
-
-	if err != nil {
-		r.RestoreState()
-		return nil, err
-	}
-
-	if g.Outside {
-		result.Match = !g.Group(rn)
-	} else {
-		result.Match = g.Group(rn)
-	}
-
-	if result.Match {
-		result.Result = r.String()
-		g.Transform(result)
-		r.PopState()
-	} else {
-		r.RestoreState()
-	}
 
 	return result, nil
 }
@@ -243,6 +186,7 @@ func NewConcatenationT(t TransformFunction, patterns ...Pattern) *Concatenation 
 
 // Match concatenation pattern
 func (c *Concatenation) Match(r *Reader) (*MatchResult, error) {
+	beginPos := r.CurrentPosition()
 	matches := []*MatchResult{}
 
 	r.PushState()
@@ -267,8 +211,10 @@ func (c *Concatenation) Match(r *Reader) (*MatchResult, error) {
 	r.PopState()
 
 	result := &MatchResult{
-		Match:  true,
-		Result: matches,
+		BeginPos: beginPos,
+		EndPos:   r.CurrentPosition(),
+		Match:    true,
+		Result:   matches,
 	}
 
 	c.Transform(result)
@@ -307,6 +253,7 @@ func NewRepetitionT(t TransformFunction, min int, max int, p Pattern) *Repetitio
 
 // Match repetition pattern
 func (rep *Repetition) Match(r *Reader) (*MatchResult, error) {
+	beginPos := r.CurrentPosition()
 	matches := []*MatchResult{}
 
 	r.PushState()
@@ -344,8 +291,10 @@ func (rep *Repetition) Match(r *Reader) (*MatchResult, error) {
 	r.PopState()
 
 	result := &MatchResult{
-		Match:  true,
-		Result: matches,
+		BeginPos: beginPos,
+		EndPos:   r.CurrentPosition(),
+		Match:    true,
+		Result:   matches,
 	}
 
 	rep.Transform(result)
@@ -432,23 +381,4 @@ func (e *EOF) Match(r *Reader) (result *MatchResult, err error) {
 	}
 
 	return
-}
-
-// EBNF pattern
-type EBNF struct {
-	RootRule string
-	Rules    map[string]Pattern
-}
-
-// NewEBNF creates a new EBNF parser
-func NewEBNF(rootrule string, rules map[string]Pattern) *EBNF {
-	return &EBNF{
-		RootRule: rootrule,
-		Rules:    rules,
-	}
-}
-
-// Match EBNF pattern
-func (e *EBNF) Match(r *Reader) (*MatchResult, error) {
-	return e.Rules[e.RootRule].Match(r)
 }
