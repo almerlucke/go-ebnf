@@ -34,6 +34,11 @@ type Transformer interface {
 	Transform(m *MatchResult)
 }
 
+// OutputFormatter can return a format for EBNF output file
+type OutputFormatter interface {
+	Format() string
+}
+
 // BaseTransformer implements transformer interface
 type BaseTransformer struct {
 	T TransformFunction
@@ -53,14 +58,7 @@ type TerminalString struct {
 }
 
 // NewTerminalString creates a new terminal string
-func NewTerminalString(s string) *TerminalString {
-	return &TerminalString{
-		String: s,
-	}
-}
-
-// NewTerminalStringT creates a new terminal string with custom transform function
-func NewTerminalStringT(t TransformFunction, s string) *TerminalString {
+func NewTerminalString(s string, t TransformFunction) *TerminalString {
 	return &TerminalString{
 		BaseTransformer: BaseTransformer{
 			T: t,
@@ -107,6 +105,11 @@ func (s *TerminalString) Match(r *Reader) (*MatchResult, error) {
 	return result, nil
 }
 
+// Format for EBNF output
+func (s *TerminalString) Format() string {
+	return s.String
+}
+
 // Alternation pattern
 type Alternation struct {
 	BaseTransformer
@@ -114,19 +117,12 @@ type Alternation struct {
 }
 
 // NewAlternation creates a new alternation pattern
-func NewAlternation(patterns ...Pattern) *Alternation {
+func NewAlternation(patterns []Pattern, t TransformFunction) *Alternation {
 	return &Alternation{
-		Patterns: patterns,
-	}
-}
-
-// NewAlternationT creates a new alternation pattern with custom transform function
-func NewAlternationT(t TransformFunction, patterns ...Pattern) *Alternation {
-	return &Alternation{
-		Patterns: patterns,
 		BaseTransformer: BaseTransformer{
 			T: t,
 		},
+		Patterns: patterns,
 	}
 }
 
@@ -168,19 +164,12 @@ type Concatenation struct {
 }
 
 // NewConcatenation creates a new concatenation pattern
-func NewConcatenation(patterns ...Pattern) *Concatenation {
+func NewConcatenation(patterns []Pattern, t TransformFunction) *Concatenation {
 	return &Concatenation{
-		Patterns: patterns,
-	}
-}
-
-// NewConcatenationT creates a new concatenation pattern with custom transform function
-func NewConcatenationT(t TransformFunction, patterns ...Pattern) *Concatenation {
-	return &Concatenation{
-		Patterns: patterns,
 		BaseTransformer: BaseTransformer{
 			T: t,
 		},
+		Patterns: patterns,
 	}
 }
 
@@ -225,29 +214,20 @@ func (c *Concatenation) Match(r *Reader) (*MatchResult, error) {
 // Repetition pattern
 type Repetition struct {
 	BaseTransformer
+	Pattern Pattern
 	Min     int
 	Max     int
-	Pattern Pattern
 }
 
 // NewRepetition creates a new repetition pattern
-func NewRepetition(min int, max int, p Pattern) *Repetition {
-	return &Repetition{
-		Min:     min,
-		Max:     max,
-		Pattern: p,
-	}
-}
-
-// NewRepetitionT creates a new repetition pattern with custom transform function
-func NewRepetitionT(t TransformFunction, min int, max int, p Pattern) *Repetition {
+func NewRepetition(p Pattern, min int, max int, t TransformFunction) *Repetition {
 	return &Repetition{
 		BaseTransformer: BaseTransformer{
 			T: t,
 		},
+		Pattern: p,
 		Min:     min,
 		Max:     max,
-		Pattern: p,
 	}
 }
 
@@ -310,15 +290,7 @@ type Exception struct {
 }
 
 // NewException creates a new exception
-func NewException(mustMatch Pattern, except Pattern) *Exception {
-	return &Exception{
-		MustMatch: mustMatch,
-		Except:    except,
-	}
-}
-
-// NewExceptionT creates a new exception with custom transform function
-func NewExceptionT(t TransformFunction, mustMatch Pattern, except Pattern) *Exception {
+func NewException(mustMatch Pattern, except Pattern, t TransformFunction) *Exception {
 	return &Exception{
 		BaseTransformer: BaseTransformer{
 			T: t,

@@ -99,31 +99,46 @@ func TestEBNF(t *testing.T) {
 		t.FailNow()
 	}
 
-	whitespace := NewRepetition(1, 0, NewCharacterGroup(unicode.IsSpace, false))
-	visibleCharacter := NewCharacterGroup(unicode.IsPrint, false)
-	digit := NewCharacterGroup(unicode.IsDigit, false)
-	alphabeticCharacter := NewCharacterGroup(NewCharacterGroupRangeFunction('A', 'Z'), false)
-	identifier := NewConcatenationT(identifierTransform,
-		alphabeticCharacter,
-		NewRepetition(0, 0, NewAlternation(alphabeticCharacter, digit)),
+	whitespace := NewRepetition(NewCharacterGroup(unicode.IsSpace, false, nil), 1, 0, nil)
+	visibleCharacter := NewCharacterGroup(unicode.IsPrint, false, nil)
+	digit := NewCharacterGroup(unicode.IsDigit, false, nil)
+	alphabeticCharacter := NewCharacterGroup(NewCharacterGroupRangeFunction('A', 'Z'), false, nil)
+	identifier := NewConcatenation(
+		[]Pattern{
+			alphabeticCharacter,
+			NewRepetition(
+				NewAlternation([]Pattern{alphabeticCharacter, digit}, nil), 0, 0, nil,
+			),
+		},
+		identifierTransform,
 	)
-	number := NewRepetitionT(numberTransform, 1, 0, digit)
-	stringRule := NewConcatenationT(stringTransform,
-		NewTerminalString("\""),
-		NewRepetition(0, 0, NewException(visibleCharacter, NewTerminalString("\""))),
-		NewTerminalString("\""),
+	number := NewRepetition(digit, 1, 0, numberTransform)
+	stringRule := NewConcatenation(
+		[]Pattern{
+			NewTerminalString("\"", nil),
+			NewRepetition(NewException(visibleCharacter, NewTerminalString("\"", nil), nil), 0, 0, nil),
+			NewTerminalString("\"", nil),
+		},
+		stringTransform,
 	)
 
-	assignment := NewConcatenationT(assignmentTransform,
-		identifier, NewTerminalString(":="), NewAlternation(number, identifier, stringRule),
+	assignment := NewConcatenation(
+		[]Pattern{
+			identifier, NewTerminalString(":=", nil), NewAlternation([]Pattern{number, identifier, stringRule}, nil),
+		},
+		assignmentTransform,
 	)
 
-	programRule := NewConcatenationT(
+	programRule := NewConcatenation(
+		[]Pattern{
+			NewTerminalString("PROGRAM", nil), whitespace, identifier, whitespace,
+			NewTerminalString("BEGIN", nil), whitespace,
+			NewRepetition(
+				NewConcatenation([]Pattern{assignment, NewTerminalString(";", nil), whitespace}, nil), 0, 0, nil,
+			),
+			NewTerminalString("END", nil),
+		},
 		programTransform,
-		NewTerminalString("PROGRAM"), whitespace, identifier, whitespace,
-		NewTerminalString("BEGIN"), whitespace,
-		NewRepetition(0, 0, NewConcatenation(assignment, NewTerminalString(";"), whitespace)),
-		NewTerminalString("END"),
 	)
 
 	result, err := programRule.Match(reader)
@@ -134,7 +149,7 @@ func TestEBNF(t *testing.T) {
 	if result.Match {
 		program := result.Result.(*program)
 
-		log.Printf("program name %v\n", program.Identifier)
+		log.Printf("program name %v - start %v, end %v \n", program.Identifier, *result.BeginPos, *result.EndPos)
 
 		for _, assignment := range program.Assignments {
 			log.Printf("assignment identifier: %v = %v\n", assignment.Identifier, assignment.Value)
@@ -181,17 +196,27 @@ func TestLanguage(t *testing.T) {
 		t.FailNow()
 	}
 
-	quoteRule := NewTerminalString(`"`)
-	backslashRule := NewTerminalString(`\`)
-	isGraphicRule := NewCharacterGroup(unicode.IsGraphic, false)
-	stringRule := NewConcatenationT(
+	quoteRule := NewTerminalString(`"`, nil)
+	backslashRule := NewTerminalString(`\`, nil)
+	isGraphicRule := NewCharacterGroup(unicode.IsGraphic, false, nil)
+	stringRule := NewConcatenation(
+		[]Pattern{
+			quoteRule,
+			NewRepetition(
+				NewAlternation(
+					[]Pattern{
+						NewConcatenation(
+							[]Pattern{backslashRule, isGraphicRule},
+							complexStringBackslashTransform,
+						),
+						NewException(isGraphicRule, quoteRule, nil),
+					},
+					nil,
+				), 0, 0, nil,
+			),
+			quoteRule,
+		},
 		complexStringTransform,
-		quoteRule,
-		NewRepetition(0, 0, NewAlternation(
-			NewConcatenationT(complexStringBackslashTransform, backslashRule, isGraphicRule),
-			NewException(isGraphicRule, quoteRule),
-		)),
-		quoteRule,
 	)
 
 	result, err := stringRule.Match(reader)

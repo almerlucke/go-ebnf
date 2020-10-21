@@ -16,15 +16,7 @@ type CharacterGroup struct {
 }
 
 // NewCharacterGroup creates a new character group
-func NewCharacterGroup(f CharacterGroupFunction, reversed bool) *CharacterGroup {
-	return &CharacterGroup{
-		Group:    f,
-		Reversed: reversed,
-	}
-}
-
-// NewCharacterGroupT creates a new character group with custom transform function
-func NewCharacterGroupT(t TransformFunction, f CharacterGroupFunction, reversed bool) *CharacterGroup {
+func NewCharacterGroup(f CharacterGroupFunction, reversed bool, t TransformFunction) *CharacterGroup {
 	return &CharacterGroup{
 		BaseTransformer: BaseTransformer{
 			T: t,
