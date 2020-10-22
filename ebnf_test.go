@@ -23,7 +23,7 @@ type program struct {
 	Assignments []*assignment
 }
 
-func identifierTransform(m *MatchResult) {
+func identifierTransform(m *MatchResult, r *Reader) error {
 	params := m.Result.([]*MatchResult)
 	var builder strings.Builder
 
@@ -35,9 +35,11 @@ func identifierTransform(m *MatchResult) {
 	}
 
 	m.Result = builder.String()
+
+	return nil
 }
 
-func numberTransform(m *MatchResult) {
+func numberTransform(m *MatchResult, r *Reader) error {
 	var builder strings.Builder
 	charResults := m.Result.([]*MatchResult)
 
@@ -46,9 +48,11 @@ func numberTransform(m *MatchResult) {
 	}
 
 	m.Result = builder.String()
+
+	return nil
 }
 
-func stringTransform(m *MatchResult) {
+func stringTransform(m *MatchResult, r *Reader) error {
 	var builder strings.Builder
 	params := m.Result.([]*MatchResult)
 
@@ -58,9 +62,11 @@ func stringTransform(m *MatchResult) {
 	}
 
 	m.Result = builder.String()
+
+	return nil
 }
 
-func assignmentTransform(m *MatchResult) {
+func assignmentTransform(m *MatchResult, r *Reader) error {
 	log.Printf("assignment: %v - %v\n", *m.BeginPos, *m.EndPos)
 
 	params := m.Result.([]*MatchResult)
@@ -71,9 +77,11 @@ func assignmentTransform(m *MatchResult) {
 		Identifier: identifier,
 		Value:      value,
 	}
+
+	return nil
 }
 
-func programTransform(m *MatchResult) {
+func programTransform(m *MatchResult, r *Reader) error {
 	program := &program{}
 
 	params := m.Result.([]*MatchResult)
@@ -90,6 +98,8 @@ func programTransform(m *MatchResult) {
 	program.Assignments = assignments
 
 	m.Result = program
+
+	return nil
 }
 
 func TestEBNF(t *testing.T) {
@@ -159,7 +169,7 @@ func TestEBNF(t *testing.T) {
 	}
 }
 
-func complexStringBackslashTransform(m *MatchResult) {
+func complexStringBackslashTransform(m *MatchResult, r *Reader) error {
 	backslashElements := m.Result.([]*MatchResult)
 	escapedChar := backslashElements[1].Result.(string)
 
@@ -172,9 +182,11 @@ func complexStringBackslashTransform(m *MatchResult) {
 	}
 
 	m.Result = escapedChar
+
+	return nil
 }
 
-func complexStringTransform(m *MatchResult) {
+func complexStringTransform(m *MatchResult, r *Reader) error {
 	stringBaseElements := m.Result.([]*MatchResult)
 	stringRepeatedElements := stringBaseElements[1].Result.([]*MatchResult)
 
@@ -187,6 +199,8 @@ func complexStringTransform(m *MatchResult) {
 	m.Result = builder.String()
 
 	log.Printf("string: %v\n", m.Result)
+
+	return nil
 }
 
 func TestLanguage(t *testing.T) {

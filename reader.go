@@ -3,7 +3,6 @@ package ebnf
 import (
 	"bufio"
 	"io"
-	"log"
 )
 
 // ReaderPos holds character and line positions
@@ -30,6 +29,7 @@ func NewReader(r io.Reader) (*Reader, error) {
 	rr := bufio.NewReader(r)
 	rs := []rune{}
 
+	// Prefetch all runes
 	for {
 		r, _, err := rr.ReadRune()
 		if err != nil {
@@ -43,6 +43,7 @@ func NewReader(r io.Reader) (*Reader, error) {
 		rs = append(rs, r)
 	}
 
+	// Prefetch all lines, normalize CRLF sequences to LF
 	lines := []int{}
 	l := len(rs)
 	index := 0
@@ -63,8 +64,7 @@ func NewReader(r io.Reader) (*Reader, error) {
 		}
 	}
 
-	log.Printf("lines %v\n", lines)
-
+	// Create reader with buffer and lines
 	return &Reader{
 		buf:          rs,
 		bufPosEnd:    len(rs),
@@ -75,6 +75,7 @@ func NewReader(r io.Reader) (*Reader, error) {
 	}, nil
 }
 
+// Relative position of cursor with regards to line position
 func (r *Reader) relativePosition() int {
 	if r.linePos == 0 {
 		return r.bufPos
@@ -154,4 +155,9 @@ func (r *Reader) Read() (rn rune, err error) {
 	}
 
 	return
+}
+
+// StringFromResult get string from match result
+func (r *Reader) StringFromResult(m *MatchResult) string {
+	return string(r.buf[m.BeginPos.absoluteCharPos:m.EndPos.absoluteCharPos])
 }

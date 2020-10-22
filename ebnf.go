@@ -28,11 +28,11 @@ type Pattern interface {
 }
 
 // TransformFunction for match result, this allows for custom transform of the result
-type TransformFunction func(r *MatchResult)
+type TransformFunction func(m *MatchResult, r *Reader) error
 
 // Transformer for match result
 type Transformer interface {
-	Transform(m *MatchResult)
+	Transform(m *MatchResult, r *Reader) error
 }
 
 // BaseTransformer implements transformer interface
@@ -41,10 +41,12 @@ type BaseTransformer struct {
 }
 
 // Transform for base transformer
-func (b *BaseTransformer) Transform(m *MatchResult) {
+func (b *BaseTransformer) Transform(m *MatchResult, r *Reader) error {
 	if b.T != nil {
-		b.T(m)
+		return b.T(m, r)
 	}
+
+	return nil
 }
 
 // TerminalString pattern
@@ -94,7 +96,11 @@ func (s *TerminalString) Match(r *Reader) (*MatchResult, error) {
 	result.Match = true
 	result.Result = r.String()
 
-	s.Transform(result)
+	err := s.Transform(result, r)
+	if err != nil {
+		r.RestoreState()
+		return nil, err
+	}
 
 	r.PopState()
 
@@ -147,7 +153,12 @@ func (g *CharacterGroup) Match(r *Reader) (*MatchResult, error) {
 
 	if result.Match {
 		result.Result = r.String()
-		g.Transform(result)
+		err = g.Transform(result, r)
+		if err != nil {
+			r.RestoreState()
+			return nil, err
+		}
+
 		r.PopState()
 	} else {
 		r.RestoreState()
@@ -206,8 +217,14 @@ func (a *Alternation) Match(r *Reader) (*MatchResult, error) {
 		}
 
 		if result.Match {
-			a.Transform(result)
+			err = a.Transform(result, r)
+			if err != nil {
+				r.RestoreState()
+				return nil, err
+			}
+
 			r.PopState()
+
 			return result, nil
 		}
 
@@ -259,8 +276,6 @@ func (c *Concatenation) Match(r *Reader) (*MatchResult, error) {
 		matches = append(matches, result)
 	}
 
-	r.PopState()
-
 	result := &MatchResult{
 		BeginPos: beginPos,
 		EndPos:   r.CurrentPosition(),
@@ -268,7 +283,13 @@ func (c *Concatenation) Match(r *Reader) (*MatchResult, error) {
 		Result:   matches,
 	}
 
-	c.Transform(result)
+	err := c.Transform(result, r)
+	if err != nil {
+		r.RestoreState()
+		return nil, err
+	}
+
+	r.PopState()
 
 	return result, nil
 }
@@ -290,6 +311,18 @@ func NewRepetition(p Pattern, min int, max int, t TransformFunction) *Repetition
 		Pattern: p,
 		Min:     min,
 		Max:     max,
+	}
+}
+
+// NewOptional creates a new repetition pattern with 0-1
+func NewOptional(p Pattern, t TransformFunction) *Repetition {
+	return &Repetition{
+		BaseTransformer: BaseTransformer{
+			T: t,
+		},
+		Pattern: p,
+		Min:     0,
+		Max:     1,
 	}
 }
 
@@ -330,8 +363,6 @@ func (rep *Repetition) Match(r *Reader) (*MatchResult, error) {
 		}, nil
 	}
 
-	r.PopState()
-
 	result := &MatchResult{
 		BeginPos: beginPos,
 		EndPos:   r.CurrentPosition(),
@@ -339,7 +370,13 @@ func (rep *Repetition) Match(r *Reader) (*MatchResult, error) {
 		Result:   matches,
 	}
 
-	rep.Transform(result)
+	err := rep.Transform(result, r)
+	if err != nil {
+		r.RestoreState()
+		return nil, err
+	}
+
+	r.PopState()
 
 	return result, nil
 }
@@ -381,8 +418,11 @@ func (e *Exception) Match(r *Reader) (result *MatchResult, err error) {
 	r.PopState()
 
 	result, err = e.MustMatch.Match(r)
+	if err != nil {
+		return
+	}
 
-	e.Transform(result)
+	err = e.Transform(result, r)
 
 	return
 }
@@ -393,12 +433,7 @@ type EOF struct {
 }
 
 // NewEOF creates a new end of file
-func NewEOF() *EOF {
-	return &EOF{}
-}
-
-// NewEOFT creates a new end of file with custom transform function
-func NewEOFT(t TransformFunction) *EOF {
+func NewEOF(t TransformFunction) *EOF {
 	return &EOF{
 		BaseTransformer: BaseTransformer{
 			T: t,
@@ -413,6 +448,8 @@ func (e *EOF) Match(r *Reader) (result *MatchResult, err error) {
 	result = &MatchResult{
 		Match: match,
 	}
+
+	err = e.Transform(result, r)
 
 	return
 }
