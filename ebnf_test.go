@@ -1,6 +1,8 @@
 package ebnf
 
 import (
+	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"testing"
@@ -24,6 +26,11 @@ type program struct {
 }
 
 func identifierTransform(m *MatchResult, r *Reader) error {
+	if !m.Match {
+		m.Error = errors.New("expected identifier")
+		return nil
+	}
+
 	params := m.Result.([]*MatchResult)
 	var builder strings.Builder
 
@@ -40,6 +47,11 @@ func identifierTransform(m *MatchResult, r *Reader) error {
 }
 
 func numberTransform(m *MatchResult, r *Reader) error {
+	if !m.Match {
+		m.Error = errors.New("expected number")
+		return nil
+	}
+
 	var builder strings.Builder
 	charResults := m.Result.([]*MatchResult)
 
@@ -53,6 +65,11 @@ func numberTransform(m *MatchResult, r *Reader) error {
 }
 
 func stringTransform(m *MatchResult, r *Reader) error {
+	if !m.Match {
+		m.Error = errors.New("expected string")
+		return nil
+	}
+
 	var builder strings.Builder
 	params := m.Result.([]*MatchResult)
 
@@ -67,7 +84,10 @@ func stringTransform(m *MatchResult, r *Reader) error {
 }
 
 func assignmentTransform(m *MatchResult, r *Reader) error {
-	log.Printf("assignment: %v - %v\n", *m.BeginPos, *m.EndPos)
+	if !m.Match {
+		m.Error = errors.New("invalid assignment")
+		return nil
+	}
 
 	params := m.Result.([]*MatchResult)
 	identifier := params[0].Result.(string)
@@ -82,6 +102,11 @@ func assignmentTransform(m *MatchResult, r *Reader) error {
 }
 
 func programTransform(m *MatchResult, r *Reader) error {
+	if !m.Match {
+		m.Error = errors.New("invalid program")
+		return nil
+	}
+
 	program := &program{}
 
 	params := m.Result.([]*MatchResult)
@@ -112,13 +137,11 @@ func TestEBNF(t *testing.T) {
 	whitespace := NewRepetition(NewCharacterGroup(unicode.IsSpace, false, nil), 1, 0, nil)
 	visibleCharacter := NewCharacterGroup(unicode.IsPrint, false, nil)
 	digit := NewCharacterGroup(unicode.IsDigit, false, nil)
-	alphabeticCharacter := NewCharacterGroup(NewCharacterGroupRangeFunction('A', 'Z'), false, nil)
+	alphabeticCharacter := NewCharacterRange('A', 'Z', false, nil)
 	identifier := NewConcatenation(
 		[]Pattern{
 			alphabeticCharacter,
-			NewRepetition(
-				NewAlternation([]Pattern{alphabeticCharacter, digit}, nil), 0, 0, nil,
-			),
+			NewAny(NewAlternation([]Pattern{alphabeticCharacter, digit}, nil), nil),
 		},
 		identifierTransform,
 	)
@@ -126,7 +149,7 @@ func TestEBNF(t *testing.T) {
 	stringRule := NewConcatenation(
 		[]Pattern{
 			NewTerminalString("\"", nil),
-			NewRepetition(NewException(visibleCharacter, NewTerminalString("\"", nil), nil), 0, 0, nil),
+			NewAny(NewException(visibleCharacter, NewTerminalString("\"", nil), nil), nil),
 			NewTerminalString("\"", nil),
 		},
 		stringTransform,
@@ -143,10 +166,15 @@ func TestEBNF(t *testing.T) {
 		[]Pattern{
 			NewTerminalString("PROGRAM", nil), whitespace, identifier, whitespace,
 			NewTerminalString("BEGIN", nil), whitespace,
-			NewRepetition(
-				NewConcatenation([]Pattern{assignment, NewTerminalString(";", nil), whitespace}, nil), 0, 0, nil,
+			NewAny(
+				NewConcatenation([]Pattern{assignment, NewTerminalString(";", nil), whitespace}, nil), nil,
 			),
-			NewTerminalString("END", nil),
+			NewTerminalString("END", func(m *MatchResult, r *Reader) error {
+				if !m.Match {
+					m.Error = fmt.Errorf("expected END statement line %d - pos %d", m.BeginPos.linePos+1, m.BeginPos.relativeCharPos+1)
+				}
+				return nil
+			}),
 		},
 		programTransform,
 	)
@@ -165,11 +193,23 @@ func TestEBNF(t *testing.T) {
 			log.Printf("assignment identifier: %v = %v\n", assignment.Identifier, assignment.Value)
 		}
 	} else {
-		log.Printf("no match\n")
+		err = result.Error
+		for err != nil {
+			log.Printf("err: %v\n", err)
+			err = nil
+			if result.Result != nil {
+				result = result.Result.(*MatchResult)
+				err = result.Error
+			}
+		}
 	}
 }
 
 func complexStringBackslashTransform(m *MatchResult, r *Reader) error {
+	if !m.Match {
+		return nil
+	}
+
 	backslashElements := m.Result.([]*MatchResult)
 	escapedChar := backslashElements[1].Result.(string)
 
@@ -187,6 +227,10 @@ func complexStringBackslashTransform(m *MatchResult, r *Reader) error {
 }
 
 func complexStringTransform(m *MatchResult, r *Reader) error {
+	if !m.Match {
+		return nil
+	}
+
 	stringBaseElements := m.Result.([]*MatchResult)
 	stringRepeatedElements := stringBaseElements[1].Result.([]*MatchResult)
 

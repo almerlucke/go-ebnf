@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 // JSONType type
@@ -33,7 +34,72 @@ type JSONValue struct {
 	Value interface{}
 }
 
+func jsonStringTransform(m *MatchResult, r *Reader) error {
+	if !m.Match {
+		return nil
+	}
+
+	value := r.StringFromResult(m)
+
+	m.Result = &JSONValue{
+		Type:  JSONStringType,
+		Value: value,
+	}
+
+	return nil
+}
+
+func jsonStringPattern() Pattern {
+	hexDigit := NewAlternation(
+		[]Pattern{
+			NewCharacterRange('a', 'z', false, nil),
+			NewCharacterRange('A', 'Z', false, nil),
+			NewCharacterRange('0', '9', false, nil),
+		},
+		nil,
+	)
+
+	hexPattern := NewConcatenation(
+		[]Pattern{
+			NewTerminalString("u", nil),
+			NewRepetition(hexDigit, 4, 4, nil),
+		},
+		nil,
+	)
+
+	escapeSequence := NewConcatenation(
+		[]Pattern{
+			NewTerminalString(`\`, nil),
+			NewAlternation(
+				[]Pattern{
+					NewCharacterEnum(`"\/bfnrt`, false, nil),
+					hexPattern,
+				},
+				nil,
+			),
+		},
+		nil,
+	)
+
+	normalCodePoint := NewCharacterGroup(func(r rune) bool {
+		return unicode.IsControl(r) || r == '\\' || r == '"'
+	}, true, nil)
+
+	return NewConcatenation(
+		[]Pattern{
+			NewTerminalString(`"`, nil),
+			NewAny(NewAlternation([]Pattern{normalCodePoint, escapeSequence}, nil), nil),
+			NewTerminalString(`"`, nil),
+		},
+		jsonStringTransform,
+	)
+}
+
 func jsonNumberTransform(m *MatchResult, r *Reader) error {
+	if !m.Match {
+		return nil
+	}
+
 	value, err := strconv.ParseFloat(r.StringFromResult(m), 64)
 	if err != nil {
 		return err
@@ -99,7 +165,7 @@ func jsonNumberPattern() Pattern {
 }
 
 func TestJSON(t *testing.T) {
-	reader, err := NewReader(strings.NewReader("-232.212e-2"))
+	reader, err := NewReader(strings.NewReader(`"\u0346 hallo"`))
 	if err != nil {
 		t.Errorf("err %v", err)
 		t.FailNow()
@@ -108,8 +174,10 @@ func TestJSON(t *testing.T) {
 	// whitespaceChars := NewCharacterGroup(NewCharacterGroupEnumFunction(" \n\r\t"), false, nil)
 	// whitespace := NewRepetition(whitespaceChars, 1, 0, nil)
 
-	numberPattern := jsonNumberPattern()
-	result, err := numberPattern.Match(reader)
+	// pattern := jsonNumberPattern()
+
+	pattern := jsonStringPattern()
+	result, err := pattern.Match(reader)
 	if err != nil {
 		log.Fatalf("err %v\n", err)
 	}
