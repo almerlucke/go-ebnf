@@ -8,43 +8,17 @@ import (
 	"unicode"
 )
 
-// JSONType type
-type JSONType int
-
-const (
-	// JSONStringType string
-	JSONStringType JSONType = iota
-	// JSONNumberType string
-	JSONNumberType
-	// JSONObjectType string
-	JSONObjectType
-	// JSONArrayType string
-	JSONArrayType
-	// JSONTrueType string
-	JSONTrueType
-	// JSONFalseType string
-	JSONFalseType
-	// JSONNullType string
-	JSONNullType
-)
-
-// JSONValue value
-type JSONValue struct {
-	Type  JSONType
-	Value interface{}
-}
-
 func jsonStringTransform(m *MatchResult, r *Reader) error {
 	if !m.Match {
 		return nil
 	}
 
-	value := r.StringFromResult(m)
-
-	m.Result = &JSONValue{
-		Type:  JSONStringType,
-		Value: value,
+	value, err := strconv.Unquote(r.StringFromResult(m))
+	if err != nil {
+		return err
 	}
+
+	m.Result = value
 
 	return nil
 }
@@ -105,10 +79,7 @@ func jsonNumberTransform(m *MatchResult, r *Reader) error {
 		return err
 	}
 
-	m.Result = &JSONValue{
-		Type:  JSONNumberType,
-		Value: value,
-	}
+	m.Result = value
 
 	return nil
 }
@@ -158,32 +129,138 @@ func jsonNumberPattern() Pattern {
 			NewOptional(fraction, nil),
 			// Optional exponent
 			NewOptional(exponent, nil),
-			NewEOF(nil),
 		},
 		jsonNumberTransform,
 	)
 }
 
+func jsonArrayTransform(m *MatchResult, r *Reader) error {
+	if !m.Match {
+		return nil
+	}
+
+	values := []interface{}{}
+
+	// Get middle alternation
+	alternation := m.Result.([]*MatchResult)[1]
+
+	// Check if not only whitespace
+	if alternation.Result != nil {
+		concatenation := alternation.Result.([]*MatchResult)
+
+		// First value is not in question so just add it
+		values = append(values, concatenation[0].Result)
+
+		// Get next values (if any)
+		nextValueResults := concatenation[1].Result.([]*MatchResult)
+		for _, valueResult := range nextValueResults {
+			// Skip comma so get index 1
+			values = append(values, valueResult.Result.([]*MatchResult)[1].Result)
+		}
+	}
+
+	m.Result = values
+
+	return nil
+}
+
+func jsonArrayPattern(value Pattern, whitespace Pattern) Pattern {
+	return NewConcatenation(
+		[]Pattern{
+			NewTerminalString("[", nil),
+			NewAlternation(
+				[]Pattern{
+					NewConcatenation(
+						[]Pattern{
+							value,
+							NewAny(NewConcatenation([]Pattern{NewTerminalString(",", nil), value}, nil), nil),
+						},
+						nil,
+					),
+					whitespace,
+				},
+				nil,
+			),
+			NewTerminalString("]", nil),
+		},
+		jsonArrayTransform,
+	)
+}
+
+func jsonTrueTransform(m *MatchResult, r *Reader) error {
+	if m.Match {
+		m.Result = true
+	}
+
+	return nil
+}
+
+func jsonFalseTransform(m *MatchResult, r *Reader) error {
+	if m.Match {
+		m.Result = false
+	}
+
+	return nil
+}
+
+func jsonNullTransform(m *MatchResult, r *Reader) error {
+	if m.Match {
+		m.Result = nil
+	}
+
+	return nil
+}
+
+func jsonValueTransform(m *MatchResult, r *Reader) error {
+	if m.Match {
+		m.Result = m.Result.([]*MatchResult)[1].Result
+	}
+
+	return nil
+}
+
+func jsonWhitespaceTransform(m *MatchResult, r *Reader) error {
+	if m.Match {
+		m.Result = nil
+	}
+	return nil
+}
+
 func TestJSON(t *testing.T) {
-	reader, err := NewReader(strings.NewReader(`"\u0346 hallo"`))
+	reader, err := NewReader(strings.NewReader(`[true, "check", [330e-2, [1, 2, 3, 4]]]`))
 	if err != nil {
 		t.Errorf("err %v", err)
 		t.FailNow()
 	}
 
-	// whitespaceChars := NewCharacterGroup(NewCharacterGroupEnumFunction(" \n\r\t"), false, nil)
-	// whitespace := NewRepetition(whitespaceChars, 1, 0, nil)
+	whitespacePattern := NewAny(NewCharacterEnum(" \n\r\t", false, nil), jsonWhitespaceTransform)
 
-	// pattern := jsonNumberPattern()
+	valueAlternation := NewAlternation(nil, nil)
+	valuePattern := NewConcatenation(
+		[]Pattern{
+			whitespacePattern,
+			valueAlternation,
+			whitespacePattern,
+		},
+		jsonValueTransform,
+	)
 
-	pattern := jsonStringPattern()
-	result, err := pattern.Match(reader)
+	arrayPattern := jsonArrayPattern(valuePattern, whitespacePattern)
+	stringPattern := jsonStringPattern()
+	numberPattern := jsonNumberPattern()
+	truePattern := NewTerminalString("true", jsonTrueTransform)
+	falsePattern := NewTerminalString("false", jsonFalseTransform)
+	nullPattern := NewTerminalString("null", jsonNullTransform)
+
+	valueAlternation.Patterns = []Pattern{truePattern, falsePattern, nullPattern, stringPattern, numberPattern, arrayPattern}
+
+	result, err := NewConcatenation([]Pattern{valuePattern, NewEOF(nil)}, nil).Match(reader)
 	if err != nil {
 		log.Fatalf("err %v\n", err)
 	}
 
 	if result.Match {
-		log.Printf("match: %v", result.Result.(*JSONValue).Value)
+		log.Printf("match: %v", result.Result.([]*MatchResult)[0].Result)
 	} else {
 		log.Print("no match")
 	}
