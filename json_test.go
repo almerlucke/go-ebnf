@@ -1,9 +1,10 @@
 package ebnf
 
 import (
+	"bufio"
 	"log"
+	"os"
 	"strconv"
-	"strings"
 	"testing"
 	"unicode"
 )
@@ -294,7 +295,17 @@ func jsonObjectPattern(value Pattern, str Pattern, whitespace Pattern) Pattern {
 }
 
 func TestJSON(t *testing.T) {
-	reader, err := NewReader(strings.NewReader(`{"a" : 1, "b" : 2}`))
+	file, err := os.Open("test.json")
+	if err != nil {
+		t.Errorf("err %v", err)
+		t.FailNow()
+	}
+
+	defer file.Close()
+
+	// strings.NewReader(`{"a" : 1, "b" : 2}`)
+
+	reader, err := NewReader(bufio.NewReader(file))
 	if err != nil {
 		t.Errorf("err %v", err)
 		t.FailNow()
