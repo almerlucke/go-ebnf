@@ -110,6 +110,22 @@ func (s *TerminalString) Match(r *Reader) (*MatchResult, error) {
 // CharacterGroupFunction check if rune is part of group
 type CharacterGroupFunction func(r rune) bool
 
+// NewCharacterGroupRangeFunction returns a function which can be used as a CharacterGroupFunction
+// with a low and high range for the input rune to match
+func NewCharacterGroupRangeFunction(low rune, high rune) CharacterGroupFunction {
+	return func(r rune) bool {
+		return r >= low && r <= high
+	}
+}
+
+// NewCharacterGroupEnumFunction returns a function which can be used as a CharacterGroupFunction
+// with a string enum which can be tested for the input rune membership
+func NewCharacterGroupEnumFunction(enum string) CharacterGroupFunction {
+	return func(r rune) bool {
+		return strings.ContainsRune(enum, r)
+	}
+}
+
 // CharacterGroup pattern, test membership of a group, for instance whitespace group
 type CharacterGroup struct {
 	BaseTransformer
@@ -126,6 +142,16 @@ func NewCharacterGroup(f CharacterGroupFunction, reversed bool, t TransformFunct
 		Group:    f,
 		Reversed: reversed,
 	}
+}
+
+// NewCharacterEnum creates a new character enum group
+func NewCharacterEnum(enum string, reversed bool, t TransformFunction) *CharacterGroup {
+	return NewCharacterGroup(NewCharacterGroupEnumFunction(enum), reversed, t)
+}
+
+// NewCharacterRange creates a new character range group
+func NewCharacterRange(low rune, high rune, reversed bool, t TransformFunction) *CharacterGroup {
+	return NewCharacterGroup(NewCharacterGroupRangeFunction(low, high), reversed, t)
 }
 
 // Match a character from a group
@@ -165,22 +191,6 @@ func (g *CharacterGroup) Match(r *Reader) (*MatchResult, error) {
 	}
 
 	return result, nil
-}
-
-// NewCharacterGroupRangeFunction returns a function which can be used as a CharacterGroupFunction
-// with a low and high range for the input rune to match
-func NewCharacterGroupRangeFunction(low rune, high rune) CharacterGroupFunction {
-	return func(r rune) bool {
-		return r >= low && r <= high
-	}
-}
-
-// NewCharacterGroupEnumFunction returns a function which can be used as a CharacterGroupFunction
-// with a string enum which can be tested for the input rune membership
-func NewCharacterGroupEnumFunction(enum string) CharacterGroupFunction {
-	return func(r rune) bool {
-		return strings.ContainsRune(enum, r)
-	}
 }
 
 // Alternation pattern

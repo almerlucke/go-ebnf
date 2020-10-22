@@ -48,10 +48,10 @@ func jsonNumberTransform(m *MatchResult, r *Reader) error {
 }
 
 func jsonNumberPattern() Pattern {
-	digitw0Chars := NewCharacterGroup(NewCharacterGroupRangeFunction('1', '9'), false, nil)
-	digitChars := NewCharacterGroup(NewCharacterGroupRangeFunction('0', '9'), false, nil)
+	digitw0Chars := NewCharacterRange('1', '9', false, nil)
+	digitChars := NewCharacterRange('0', '9', false, nil)
 
-	numberFraction := NewConcatenation(
+	fraction := NewConcatenation(
 		[]Pattern{
 			NewTerminalString(".", nil),
 			NewRepetition(digitChars, 0, 0, nil),
@@ -59,7 +59,7 @@ func jsonNumberPattern() Pattern {
 		nil,
 	)
 
-	numberZeroOrDigits := NewAlternation(
+	zeroOrDigits := NewAlternation(
 		[]Pattern{
 			NewTerminalString("0", nil),
 			NewConcatenation(
@@ -73,14 +73,25 @@ func jsonNumberPattern() Pattern {
 		nil,
 	)
 
+	exponent := NewConcatenation(
+		[]Pattern{
+			NewCharacterEnum("eE", false, nil),
+			NewOptional(NewCharacterEnum("-+", false, nil), nil),
+			NewRepetition(digitChars, 1, 0, nil),
+		},
+		nil,
+	)
+
 	return NewConcatenation(
 		[]Pattern{
 			// Optional minus
 			NewOptional(NewTerminalString("-", nil), nil),
 			// 0 or digits
-			numberZeroOrDigits,
+			zeroOrDigits,
 			// Optional fraction
-			NewOptional(numberFraction, nil),
+			NewOptional(fraction, nil),
+			// Optional exponent
+			NewOptional(exponent, nil),
 			NewEOF(nil),
 		},
 		jsonNumberTransform,
@@ -88,7 +99,7 @@ func jsonNumberPattern() Pattern {
 }
 
 func TestJSON(t *testing.T) {
-	reader, err := NewReader(strings.NewReader("-232.212"))
+	reader, err := NewReader(strings.NewReader("-232.212e-2"))
 	if err != nil {
 		t.Errorf("err %v", err)
 		t.FailNow()
