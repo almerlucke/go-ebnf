@@ -85,27 +85,27 @@ func jsonNumberTransform(m *MatchResult, r *Reader) error {
 }
 
 func jsonNumberPattern() Pattern {
-	digitw0Chars := NewCharacterRange('1', '9', false, nil)
+	digitno0Chars := NewCharacterRange('1', '9', false, nil)
 	digitChars := NewCharacterRange('0', '9', false, nil)
-
-	fraction := NewConcatenation(
-		[]Pattern{
-			NewTerminalString(".", nil),
-			NewRepetition(digitChars, 0, 0, nil),
-		},
-		nil,
-	)
 
 	zeroOrDigits := NewAlternation(
 		[]Pattern{
 			NewTerminalString("0", nil),
 			NewConcatenation(
 				[]Pattern{
-					digitw0Chars,
+					digitno0Chars,
 					NewRepetition(digitChars, 0, 0, nil),
 				},
 				nil,
 			),
+		},
+		nil,
+	)
+
+	fraction := NewConcatenation(
+		[]Pattern{
+			NewTerminalString(".", nil),
+			NewRepetition(digitChars, 0, 0, nil),
 		},
 		nil,
 	)
@@ -121,69 +121,12 @@ func jsonNumberPattern() Pattern {
 
 	return NewConcatenation(
 		[]Pattern{
-			// Optional minus
 			NewOptional(NewTerminalString("-", nil), nil),
-			// 0 or digits
 			zeroOrDigits,
-			// Optional fraction
 			NewOptional(fraction, nil),
-			// Optional exponent
 			NewOptional(exponent, nil),
 		},
 		jsonNumberTransform,
-	)
-}
-
-func jsonArrayTransform(m *MatchResult, r *Reader) error {
-	if !m.Match {
-		return nil
-	}
-
-	values := []interface{}{}
-
-	// Get middle alternation
-	alternation := m.Result.([]*MatchResult)[1]
-
-	// Check if not only whitespace
-	if alternation.Result != nil {
-		concatenation := alternation.Result.([]*MatchResult)
-
-		// First value is not in question so just add it
-		values = append(values, concatenation[0].Result)
-
-		// Get next values (if any)
-		nextValueResults := concatenation[1].Result.([]*MatchResult)
-		for _, valueResult := range nextValueResults {
-			// Skip comma so get index 1
-			values = append(values, valueResult.Result.([]*MatchResult)[1].Result)
-		}
-	}
-
-	m.Result = values
-
-	return nil
-}
-
-func jsonArrayPattern(value Pattern, whitespace Pattern) Pattern {
-	return NewConcatenation(
-		[]Pattern{
-			NewTerminalString("[", nil),
-			NewAlternation(
-				[]Pattern{
-					NewConcatenation(
-						[]Pattern{
-							value,
-							NewAny(NewConcatenation([]Pattern{NewTerminalString(",", nil), value}, nil), nil),
-						},
-						nil,
-					),
-					whitespace,
-				},
-				nil,
-			),
-			NewTerminalString("]", nil),
-		},
-		jsonArrayTransform,
 	)
 }
 
@@ -226,8 +169,132 @@ func jsonWhitespaceTransform(m *MatchResult, r *Reader) error {
 	return nil
 }
 
+func jsonArrayTransform(m *MatchResult, r *Reader) error {
+	if !m.Match {
+		return nil
+	}
+
+	values := []interface{}{}
+
+	// Get middle alternation
+	alternation := m.Result.([]*MatchResult)[1]
+
+	// Check if not only whitespace
+	if alternation.Result != nil {
+		concatenation := alternation.Result.([]*MatchResult)
+
+		// First value is not in question so just add it
+		values = append(values, concatenation[0].Result)
+
+		// Get next values (if any)
+		nextValueResults := concatenation[1].Result.([]*MatchResult)
+		for _, valueResult := range nextValueResults {
+			// Skip comma so get index 1
+			values = append(values, valueResult.Result.([]*MatchResult)[1].Result)
+		}
+	}
+
+	m.Result = values
+
+	return nil
+}
+
+func jsonArrayPattern(value Pattern, whitespace Pattern) Pattern {
+	oneOrManyValues := NewConcatenation(
+		[]Pattern{
+			value,
+			NewAny(NewConcatenation([]Pattern{NewTerminalString(",", nil), value}, nil), nil),
+		},
+		nil,
+	)
+
+	return NewConcatenation(
+		[]Pattern{
+			NewTerminalString("[", nil),
+			NewAlternation(
+				[]Pattern{
+					oneOrManyValues,
+					// Sometimes order matter, whitespace needs to be after oneOrManyValues
+					whitespace,
+				},
+				nil,
+			),
+			NewTerminalString("]", nil),
+		},
+		jsonArrayTransform,
+	)
+}
+
+func jsonObjectTransform(m *MatchResult, r *Reader) error {
+	if !m.Match {
+		return nil
+	}
+
+	getKey := func(keyResult *MatchResult) string {
+		return keyResult.Result.([]*MatchResult)[0].Result.([]*MatchResult)[1].Result.(string)
+	}
+
+	getValue := func(keyResult *MatchResult) interface{} {
+		return keyResult.Result.([]*MatchResult)[2].Result
+	}
+
+	object := map[string]interface{}{}
+
+	// Get middle alternation
+	alternation := m.Result.([]*MatchResult)[1]
+
+	// Check if not only whitespace
+	if alternation.Result != nil {
+		concatenation := alternation.Result.([]*MatchResult)
+
+		// First value is not in question so just add it
+		keyValue := concatenation[0]
+		object[getKey(keyValue)] = getValue(keyValue)
+
+		// Get next values (if any)
+		nextValueResults := concatenation[1].Result.([]*MatchResult)
+		for _, valueResult := range nextValueResults {
+			// Skip comma so get index 1
+			keyValue := valueResult.Result.([]*MatchResult)[1]
+			object[getKey(keyValue)] = getValue(keyValue)
+		}
+	}
+
+	m.Result = object
+
+	return nil
+}
+
+func jsonObjectPattern(value Pattern, str Pattern, whitespace Pattern) Pattern {
+	key := NewConcatenation([]Pattern{whitespace, str, whitespace}, nil)
+	keyValue := NewConcatenation([]Pattern{key, NewTerminalString(":", nil), value}, nil)
+	oneOrManyKeyValues := NewConcatenation(
+		[]Pattern{
+			keyValue,
+			NewAny(NewConcatenation([]Pattern{NewTerminalString(",", nil), keyValue}, nil), nil),
+		},
+		nil,
+	)
+
+	return NewConcatenation(
+		[]Pattern{
+			NewTerminalString("{", nil),
+			NewAlternation(
+				[]Pattern{
+					oneOrManyKeyValues,
+					// Sometimes order matter, whitespace needs to be after oneOrManyKeyValues
+					whitespace,
+				},
+				nil,
+			),
+			NewTerminalString("}", nil),
+		},
+		jsonObjectTransform,
+	)
+}
+
 func TestJSON(t *testing.T) {
-	reader, err := NewReader(strings.NewReader(`[true, "check", [330e-2, [1, 2, 3, 4]]]`))
+	reader, err := NewReader(strings.NewReader(`{"a" : 1, "b" : 2}`))
 	if err != nil {
 		t.Errorf("err %v", err)
 		t.FailNow()
@@ -237,22 +304,20 @@ func TestJSON(t *testing.T) {
 
 	valueAlternation := NewAlternation(nil, nil)
 	valuePattern := NewConcatenation(
-		[]Pattern{
-			whitespacePattern,
-			valueAlternation,
-			whitespacePattern,
-		},
-		jsonValueTransform,
+		[]Pattern{whitespacePattern, valueAlternation, whitespacePattern}, jsonValueTransform,
 	)
 
-	arrayPattern := jsonArrayPattern(valuePattern, whitespacePattern)
 	stringPattern := jsonStringPattern()
+	arrayPattern := jsonArrayPattern(valuePattern, whitespacePattern)
+	objectPattern := jsonObjectPattern(valuePattern, stringPattern, whitespacePattern)
 	numberPattern := jsonNumberPattern()
 	truePattern := NewTerminalString("true", jsonTrueTransform)
 	falsePattern := NewTerminalString("false", jsonFalseTransform)
 	nullPattern := NewTerminalString("null", jsonNullTransform)
 
-	valueAlternation.Patterns = []Pattern{truePattern, falsePattern, nullPattern, stringPattern, numberPattern, arrayPattern}
+	valueAlternation.Patterns = []Pattern{
+		truePattern, falsePattern, nullPattern, stringPattern, numberPattern, arrayPattern, objectPattern,
+	}
 
 	result, err := NewConcatenation([]Pattern{valuePattern, NewEOF(nil)}, nil).Match(reader)
 	if err != nil {
