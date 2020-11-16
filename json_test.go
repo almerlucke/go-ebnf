@@ -2,6 +2,8 @@ package ebnf
 
 import (
 	"bufio"
+	"errors"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -11,6 +13,10 @@ import (
 
 func jsonStringTransform(m *MatchResult, r *Reader) error {
 	if !m.Match {
+		if m.PartialMatch {
+			m.Error = errors.New("not a valid string")
+			r.PushError(m)
+		}
 		return nil
 	}
 
@@ -158,6 +164,8 @@ func jsonNullTransform(m *MatchResult, r *Reader) error {
 func jsonValueTransform(m *MatchResult, r *Reader) error {
 	if m.Match {
 		m.Result = m.Result.([]*MatchResult)[1].Result
+	} else {
+		m.Error = errors.New("no valid json value found")
 	}
 
 	return nil
@@ -172,6 +180,10 @@ func jsonWhitespaceTransform(m *MatchResult, r *Reader) error {
 
 func jsonArrayTransform(m *MatchResult, r *Reader) error {
 	if !m.Match {
+		if m.PartialMatch {
+			m.Error = fmt.Errorf("array not closed properly")
+			r.PushError(m)
+		}
 		return nil
 	}
 
@@ -228,6 +240,10 @@ func jsonArrayPattern(value Pattern, whitespace Pattern) Pattern {
 
 func jsonObjectTransform(m *MatchResult, r *Reader) error {
 	if !m.Match {
+		if m.PartialMatch {
+			m.Error = errors.New("object not properly closed")
+			r.PushError(m)
+		}
 		return nil
 	}
 
@@ -295,7 +311,7 @@ func jsonObjectPattern(value Pattern, str Pattern, whitespace Pattern) Pattern {
 }
 
 func TestJSON(t *testing.T) {
-	file, err := os.Open("test.json")
+	file, err := os.Open("test2.json")
 	if err != nil {
 		t.Errorf("err %v", err)
 		t.FailNow()
@@ -327,7 +343,7 @@ func TestJSON(t *testing.T) {
 	nullPattern := NewTerminalString("null", jsonNullTransform)
 
 	valueAlternation.Patterns = []Pattern{
-		truePattern, falsePattern, nullPattern, stringPattern, numberPattern, arrayPattern, objectPattern,
+		stringPattern, numberPattern, objectPattern, arrayPattern, truePattern, falsePattern, nullPattern,
 	}
 
 	result, err := NewConcatenation([]Pattern{valuePattern, NewEOF(nil)}, nil).Match(reader)
@@ -338,6 +354,9 @@ func TestJSON(t *testing.T) {
 	if result.Match {
 		log.Printf("match: %v", result.Result.([]*MatchResult)[0].Result)
 	} else {
-		log.Print("no match")
+		deepest := reader.DeepestError()
+		if deepest.Error != nil {
+			log.Printf("err result: %v %v\n", deepest.Error, deepest.RangeString())
+		}
 	}
 }

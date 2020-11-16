@@ -1,6 +1,6 @@
 /*
-Package ebnf allows to construct a set of EBNF type rules and provides a reader and struct/methods to
-define, parse and validate any type of context-free grammar. ebfn_test.go shows
+Package ebnf allows to construct a set of EBNF type pattern matcher and provides a reader
+and struct/methods to define, parse and validate any type of context-free grammar. ebfn_test.go shows
 an example of how to describe a simple pascal like syntax as shown in
 https://en.wikipedia.org/wiki/Extended_Backus%E2%80%93Naur_form. For each pattern
 you can specify a transform function which can be used to transform the default
@@ -15,14 +15,24 @@ import (
 	"strings"
 )
 
-// MatchResult contains the result of a match, error can be used by transform function
-// to set an error message when there is no match
+// MatchResult contains the result of a match
 type MatchResult struct {
-	Match    bool
-	Error    error
-	BeginPos *ReaderPos
-	EndPos   *ReaderPos
-	Result   interface{}
+	Match        bool
+	PartialMatch bool
+	BeginPos     *ReaderPos
+	EndPos       *ReaderPos
+	Result       interface{}
+	Error        error
+	Failed       *MatchResult
+}
+
+// RangeString returns the range of the match as a string
+func (m *MatchResult) RangeString() string {
+	bl := m.BeginPos.linePos + 1
+	bp := m.BeginPos.relativeCharPos + 1
+	el := m.EndPos.linePos + 1
+	ep := m.EndPos.relativeCharPos + 1
+	return fmt.Sprintf("> line %d, pos %d --- line %d, pos %d <", bl, bp, el, ep)
 }
 
 // Pattern to match
@@ -239,6 +249,7 @@ func NewAlternation(patterns []Pattern, t TransformFunction) *Alternation {
 // Match alternation pattern, matches if one of the alternating patterns matches, returns the first matching pattern
 func (a *Alternation) Match(r *Reader) (*MatchResult, error) {
 	beginPos := r.CurrentPosition()
+	var partialMatchResult *MatchResult = nil
 
 	for _, p := range a.Patterns {
 		finished := r.Finished()
@@ -259,6 +270,8 @@ func (a *Alternation) Match(r *Reader) (*MatchResult, error) {
 			}
 
 			return result, nil
+		} else if result.PartialMatch {
+			partialMatchResult = result
 		}
 	}
 
@@ -266,6 +279,7 @@ func (a *Alternation) Match(r *Reader) (*MatchResult, error) {
 		BeginPos: beginPos,
 		EndPos:   beginPos,
 		Match:    false,
+		Failed:   partialMatchResult,
 	}
 
 	err := a.Transform(result, r)
@@ -297,6 +311,7 @@ func NewConcatenation(patterns []Pattern, t TransformFunction) *Concatenation {
 func (c *Concatenation) Match(r *Reader) (*MatchResult, error) {
 	beginPos := r.CurrentPosition()
 	matches := []*MatchResult{}
+	partialMatch := false
 
 	r.PushState()
 
@@ -308,10 +323,11 @@ func (c *Concatenation) Match(r *Reader) (*MatchResult, error) {
 
 		if !result.Match {
 			result = &MatchResult{
-				BeginPos: beginPos,
-				EndPos:   r.CurrentPosition(),
-				Match:    false,
-				Result:   result, // Store unmatched result as result of the failed concatenation
+				BeginPos:     beginPos,
+				EndPos:       r.CurrentPosition(),
+				Match:        false,
+				PartialMatch: partialMatch,
+				Failed:       result, // Store unmatched result as result of the failed concatenation
 			}
 
 			err := c.Transform(result, r)
@@ -323,6 +339,8 @@ func (c *Concatenation) Match(r *Reader) (*MatchResult, error) {
 
 			return result, nil
 		}
+
+		partialMatch = true
 
 		matches = append(matches, result)
 	}
@@ -421,9 +439,9 @@ func (rep *Repetition) Match(r *Reader) (*MatchResult, error) {
 	}
 
 	if len(matches) < rep.Min {
-		noMatchResult := result
+		failedResult := result
 		if result.Match {
-			noMatchResult = nil
+			failedResult = nil
 		}
 
 		result = &MatchResult{
@@ -431,7 +449,7 @@ func (rep *Repetition) Match(r *Reader) (*MatchResult, error) {
 			BeginPos: beginPos,
 			EndPos:   r.CurrentPosition(),
 			Match:    false,
-			Result:   noMatchResult,
+			Failed:   failedResult,
 		}
 
 		err = rep.Transform(result, r)
@@ -490,7 +508,7 @@ func (e *Exception) Match(r *Reader) (*MatchResult, error) {
 
 	if result.Match {
 		result.Match = false
-		result.Result = nil
+		result.Failed = result
 
 		err = e.Transform(result, r)
 		if err != nil {

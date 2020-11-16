@@ -22,6 +22,7 @@ type Reader struct {
 	linePos      int
 	linePosEnd   int
 	linePosStack []int
+	errorStack   []*MatchResult
 }
 
 // NewReader creates a new reader, all runes in input reader are first read and buffered
@@ -72,6 +73,7 @@ func NewReader(r io.Reader) (*Reader, error) {
 		linePosStack: []int{0},
 		lines:        lines,
 		linePosEnd:   len(lines),
+		errorStack:   []*MatchResult{},
 	}, nil
 }
 
@@ -160,4 +162,26 @@ func (r *Reader) Read() (rn rune, err error) {
 // StringFromResult get string from match result
 func (r *Reader) StringFromResult(m *MatchResult) string {
 	return string(r.buf[m.BeginPos.absoluteCharPos:m.EndPos.absoluteCharPos])
+}
+
+// PushError push match result errors
+func (r *Reader) PushError(failed *MatchResult) {
+	r.errorStack = append(r.errorStack, failed)
+}
+
+// DeepestError returns the error that is the most advanced in char pos
+func (r *Reader) DeepestError() *MatchResult {
+	var deepestResult *MatchResult = nil
+
+	for _, result := range r.errorStack {
+		if deepestResult == nil {
+			deepestResult = result
+		} else {
+			if result.EndPos.absoluteCharPos > deepestResult.EndPos.absoluteCharPos {
+				deepestResult = result
+			}
+		}
+	}
+
+	return deepestResult
 }
